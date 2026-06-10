@@ -34,6 +34,8 @@ from .const import (
     CONF_COLOR,
     CONF_EFFECT,
     CONF_ENTITY_ID,
+    CONF_FILL_MAX,
+    CONF_FILL_MIN,
     CONF_FOR_MINUTES,
     CONF_HOST,
     CONF_LED,
@@ -90,7 +92,20 @@ def normalize_rule(rule: dict) -> dict:
         for_minutes = max(0.0, float(rule.get(CONF_FOR_MINUTES, 0) or 0))
     except (ValueError, TypeError):
         for_minutes = 0.0
+
+    def _num(key, default):
+        try:
+            return float(rule.get(key, default))
+        except (ValueError, TypeError):
+            return default
+
+    fill_min = _num(CONF_FILL_MIN, 0.0)
+    fill_max = _num(CONF_FILL_MAX, 100.0)
+    if fill_max <= fill_min:
+        fill_max = fill_min + 1.0
     return {
+        CONF_FILL_MIN: fill_min,
+        CONF_FILL_MAX: fill_max,
         CONF_ENTITY_ID: rule[CONF_ENTITY_ID],
         CONF_LEDS: leds,
         CONF_COLOR: str(rule.get(CONF_COLOR, DEFAULT_COLOR)).lstrip("#").upper(),
@@ -193,6 +208,13 @@ class TaskMapManager:
         if state is None:
             return False
         value = state.state
+        if rule.get(CONF_EFFECT) == "fill":
+            # Fill rules are "on" whenever the entity reports a number
+            try:
+                float(value)
+                return True
+            except (ValueError, TypeError):
+                return False
         tokens = [
             t.strip()
             for t in rule.get(CONF_ALERT_STATES, DEFAULT_ALERT_STATES).split(",")
@@ -257,6 +279,20 @@ class TaskMapManager:
         leds: dict[int, tuple[str, str]] = {}
         for idx, rule in enumerate(self.rules):
             if not self.rule_alerts.get(idx):
+                continue
+            if rule[CONF_EFFECT] == "fill":
+                state = self.hass.states.get(rule[CONF_ENTITY_ID])
+                try:
+                    val = float(state.state) if state else None
+                except (ValueError, TypeError):
+                    val = None
+                if val is None:
+                    continue
+                lo, hi = rule[CONF_FILL_MIN], rule[CONF_FILL_MAX]
+                frac = max(0.0, min(1.0, (val - lo) / (hi - lo)))
+                lit = round(frac * len(rule[CONF_LEDS]))
+                for led in sorted(rule[CONF_LEDS])[:lit]:
+                    leds[led] = (rule[CONF_COLOR], "solid")
                 continue
             for led in rule[CONF_LEDS]:
                 leds[led] = (rule[CONF_COLOR], rule[CONF_EFFECT])
@@ -453,6 +489,8 @@ class TaskMapManager:
         if "logbook" not in self.hass.config.components:
             return
         for idx, rule in enumerate(self.rules):
+            if rule[CONF_EFFECT] == "fill":
+                continue  # fill bars track values continuously; logging would spam
             now = bool(self.rule_alerts.get(idx))
             before = self._last_logged.get(idx)
             if before is None or before == now:
@@ -628,6 +666,8 @@ def ws_get_config(hass, connection, msg) -> None:
                 vol.Required(CONF_ALERT_STATES): str,
                 vol.Optional(CONF_EFFECT, default=DEFAULT_EFFECT): vol.In(EFFECTS),
                 vol.Optional(CONF_FOR_MINUTES, default=0): vol.Coerce(float),
+                vol.Optional(CONF_FILL_MIN, default=0): vol.Coerce(float),
+                vol.Optional(CONF_FILL_MAX, default=100): vol.Coerce(float),
             }
         ],
     }

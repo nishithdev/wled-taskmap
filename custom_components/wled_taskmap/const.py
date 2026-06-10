@@ -13,6 +13,8 @@ CONF_COLOR = "color"
 CONF_ALERT_STATES = "alert_states"
 CONF_EFFECT = "effect"  # solid | blink | pulse
 CONF_FOR_MINUTES = "for_minutes"  # flap protection: condition must hold this long
+CONF_FILL_MIN = "fill_min"  # fill effect: value mapped to 0% of the LED block
+CONF_FILL_MAX = "fill_max"  # fill effect: value mapped to 100% of the LED block
 
 # Quiet hours (entry options)
 CONF_QUIET_START = "quiet_start"  # "22:00"
@@ -29,7 +31,7 @@ DEFAULT_ALERT_STATES = "unavailable,unknown,error,problem"
 DEFAULT_EFFECT = "solid"
 OFF_COLOR = "000000"
 
-EFFECTS = ["solid", "blink", "pulse"]
+EFFECTS = ["solid", "blink", "pulse", "fill"]
 QUIET_MODES = ["off", "dim", "hide", "strip_off"]
 DIM_FACTOR = 0.25
 PULSE_LOW_FACTOR = 0.15

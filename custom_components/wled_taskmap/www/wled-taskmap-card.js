@@ -130,9 +130,11 @@ class WledTaskmapCard extends HTMLElement {
         color: "#" + r.color.replace("#", ""),
         effect: r.effect || "solid",
         forMin: r.for_minutes || 0,
+        fillMin: r.fill_min ?? 0,
+        fillMax: r.fill_max ?? 100,
       };
     } else {
-      this._form = { entity: "", states: new Set(["unavailable", "error"]), color: "#FF0000", effect: "solid", forMin: 0 };
+      this._form = { entity: "", states: new Set(["unavailable", "error"]), color: "#FF0000", effect: "solid", forMin: 0, fillMin: 0, fillMax: 100 };
     }
     this._render();
   }
@@ -150,7 +152,8 @@ class WledTaskmapCard extends HTMLElement {
     if (!entity || !this._hass.states[entity]) return this._flash("Pick a valid entity");
     if (!leds.length) return this._flash("Tap some LEDs on the strip first");
     const isTodo = entity.startsWith("todo.");
-    if (!isTodo && !this._form.states.size) return this._flash("Pick at least one state");
+    const isFill = this._form.effect === "fill";
+    if (!isTodo && !isFill && !this._form.states.size) return this._flash("Pick at least one state");
     const rule = {
       entity_id: entity,
       leds,
@@ -158,6 +161,8 @@ class WledTaskmapCard extends HTMLElement {
       alert_states: [...this._form.states].join(","),
       effect: this._form.effect || "solid",
       for_minutes: Math.max(0, parseFloat(this._form.forMin) || 0),
+      fill_min: parseFloat(this._form.fillMin) || 0,
+      fill_max: parseFloat(this._form.fillMax) || 100,
     };
     if (this._editing !== null) this._rules[this._editing] = rule;
     else this._rules.push(rule);
@@ -215,7 +220,8 @@ class WledTaskmapCard extends HTMLElement {
       return;
     }
     const n = this._entry.led_count || 30;
-    const editingTodo = this._form.entity.trim().startsWith("todo.");
+    const isFill = this._form.effect === "fill";
+    const editingTodo = !isFill && this._form.entity.trim().startsWith("todo.");
 
     const leds = Array.from({ length: n }, (_, i) => {
       const ruleColor = this._ledColor(i);
@@ -230,11 +236,13 @@ class WledTaskmapCard extends HTMLElement {
 
     const rules = this._rules.map((r, i) => {
       const name = this._hass.states[r.entity_id]?.attributes?.friendly_name || r.entity_id;
-      const when = r.entity_id.startsWith("todo.")
+      const when = r.effect === "fill"
+        ? `fills ${r.fill_min ?? 0}–${r.fill_max ?? 100}`
+        : r.entity_id.startsWith("todo.")
         ? "has pending items"
         : `is ${r.alert_states.split(",").join(" / ")}`;
       const ledsTxt = r.leds.length > 6 ? `${r.leds.length} LEDs` : `LED ${r.leds.join(", ")}`;
-      const fx = (r.effect === "blink" ? " · ⚡ blink" : r.effect === "pulse" ? " · 〰 pulse" : "")
+      const fx = (r.effect === "blink" ? " · ⚡ blink" : r.effect === "pulse" ? " · 〰 pulse" : r.effect === "fill" ? " · ▮▯ fill bar" : "")
         + (r.for_minutes > 0 ? ` · ⏱ after ${r.for_minutes}m` : "");
       return `<div class="rule">
         <span class="dot" style="background:#${r.color}"></span>
@@ -261,7 +269,12 @@ class WledTaskmapCard extends HTMLElement {
         <div class="step"><span class="num">2</span> When this entity…</div>
         <input class="entity" list="entities" placeholder="Start typing… e.g. sensor.printer" value="${this._form.entity}">
         <datalist id="entities">${entityOptions}</datalist>
-        ${editingTodo
+        ${isFill
+          ? `<div class="step"><span class="num">3</span> Fill the LEDs as its value goes from
+             <input type="number" class="fillmin" value="${this._form.fillMin}" style="width:64px"> to
+             <input type="number" class="fillmax" value="${this._form.fillMax}" style="width:64px"></div>
+             <div class="hint">Progress bar: at the first value no LEDs are lit, at the second all selected LEDs are. E.g. 0 to 100 for a print-progress sensor.</div>`
+          : editingTodo
           ? `<div class="hint">To-do list: lights up whenever it has pending items.</div>`
           : `<div class="step"><span class="num">3</span> …is in one of these states</div><div class="chips">${stateChips}
              <input class="newstate" placeholder="other…" size="8"></div>
@@ -269,7 +282,7 @@ class WledTaskmapCard extends HTMLElement {
         <div class="step"><span class="num">${editingTodo ? 3 : 4}</span> Light them in this color
           <input type="color" class="color" value="${this._form.color}">
           <span class="chips" style="display:inline-flex;margin-left:10px">
-            ${["solid","blink","pulse"].map((e) =>
+            ${["solid","blink","pulse","fill"].map((e) =>
               `<button class="chip ${this._form.effect === e ? "on" : ""}" data-effect="${e}">${e === "blink" ? "⚡ " : e === "pulse" ? "〰 " : ""}${e}</button>`).join("")}
           </span></div>
         <div class="step">⏱ Only alert after
@@ -406,6 +419,10 @@ class WledTaskmapCard extends HTMLElement {
     color?.addEventListener("input", () => { this._form.color = color.value; this._render(); });
     const formin = root.querySelector(".formin");
     formin?.addEventListener("change", () => { this._form.forMin = formin.value; });
+    const fmin = root.querySelector(".fillmin");
+    fmin?.addEventListener("change", () => { this._form.fillMin = fmin.value; });
+    const fmax = root.querySelector(".fillmax");
+    fmax?.addEventListener("change", () => { this._form.fillMax = fmax.value; });
   }
 }
 

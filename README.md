@@ -101,8 +101,8 @@ A single 30-LED shelf strip can act as a whole-house dashboard by giving each to
 | Network | 6–9 | `update.home_assistant_core` is `on` (update available) | purple, solid |
 | Chores | 10–14 | `todo.shopping_list` has pending items | orange, solid |
 | Chores | 15–19 | `todo.chores` has `>3` items | orange, pulse |
-| Printer | 20–24 | `sensor.p1s_print_status` is `error` / `unavailable` | red, blink |
-| Printer | 25–29 | `sensor.p1s_nozzle_temperature` is `>250` | yellow, pulse |
+| Printer | 20–28 | `sensor.p1s_print_progress` from 0 to 100 | blue, **fill** (live progress bar) |
+| Printer | 29 | `sensor.p1s_print_status` is `error` / `unavailable` | red, blink |
 
 Tips that make multi-LED setups work well:
 

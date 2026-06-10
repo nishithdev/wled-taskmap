@@ -68,7 +68,14 @@ Rules are stored in the config entry options:
 
 ## Effects
 
-Each rule has an effect: **solid** (default), **blink** (on/off every second — for critical alerts), or **pulse** (full/dim breathing). Blinking is driven by Home Assistant, so it works per-LED even though WLED effects are per-segment.
+Each rule has an effect:
+
+- **solid** (default)
+- **blink** — on/off every second, for critical alerts
+- **pulse** — full/dim breathing
+- **fill** — a live progress bar: the rule's LEDs fill proportionally to the entity's numeric value, scaled between the rule's *from* and *to* values (e.g. 0→100 for a print-progress sensor, 0→10 for a to-do list count). States are ignored for fill rules; they track the value whenever it's numeric, and fill rules are not written to the Logbook.
+
+Blink/pulse are driven by Home Assistant, so they work per-LED even though WLED effects are per-segment.
 
 ## Quiet hours
 

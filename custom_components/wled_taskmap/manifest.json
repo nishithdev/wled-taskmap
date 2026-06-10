@@ -1,11 +1,11 @@
 {
   "domain": "wled_taskmap",
   "name": "WLED Task Map",
-  "codeowners": ["@nishithsurya"],
+  "codeowners": ["@nishithdev"],
   "config_flow": true,
-  "documentation": "https://github.com/nishithsurya/wled-taskmap",
+  "documentation": "https://github.com/nishithdev/wled-taskmap",
   "iot_class": "local_push",
-  "issue_tracker": "https://github.com/nishithsurya/wled-taskmap/issues",
+  "issue_tracker": "https://github.com/nishithdev/wled-taskmap/issues",
   "requirements": [],
   "version": "0.1.0"
 }

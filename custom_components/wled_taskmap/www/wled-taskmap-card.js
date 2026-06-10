@@ -321,6 +321,7 @@ class WledTaskmapCard extends HTMLElement {
             <option value="off" ${this._quiet.mode === "off" ? "selected" : ""}>Off</option>
             <option value="dim" ${this._quiet.mode === "dim" ? "selected" : ""}>Dim alerts</option>
             <option value="hide" ${this._quiet.mode === "hide" ? "selected" : ""}>Hide alerts</option>
+            <option value="strip_off" ${this._quiet.mode === "strip_off" ? "selected" : ""}>Turn strip off</option>
           </select>
           <span class="qtimes" style="${this._quiet.mode === "off" ? "display:none" : ""}">
             from <input type="time" class="qstart" value="${this._quiet.start}">

@@ -29,7 +29,7 @@ DEFAULT_EFFECT = "solid"
 OFF_COLOR = "000000"
 
 EFFECTS = ["solid", "blink", "pulse"]
-QUIET_MODES = ["off", "dim", "hide"]
+QUIET_MODES = ["off", "dim", "hide", "strip_off"]
 DIM_FACTOR = 0.25
 PULSE_LOW_FACTOR = 0.15
 BLINK_INTERVAL = 1.0  # seconds

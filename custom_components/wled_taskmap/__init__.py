@@ -140,6 +140,7 @@ class TaskMapManager:
         self.snapshot: dict[int, str] | None = None
         self._phase = True  # blink phase
         self._was_quiet: bool | None = None
+        self._strip_was_on = True  # strip power state before strip_off quiet
         self._unsub_state = None
         self._unsub_blink = None
         self._unsub_minute = None
@@ -296,7 +297,7 @@ class TaskMapManager:
         async with self._lock:
             active = self.active_alerts
             quiet = self._in_quiet()
-            hidden = quiet and self.quiet_mode == "hide"
+            hidden = quiet and self.quiet_mode in ("hide", "strip_off")
 
             if active and not hidden:
                 await self._take_snapshot()
@@ -328,6 +329,39 @@ class TaskMapManager:
                 self._manage_blink(False)
 
         async_dispatcher_send(self.hass, f"{SIGNAL_UPDATE}_{self.entry.entry_id}")
+
+    async def _set_strip_power(self, on: bool) -> None:
+        session = async_get_clientsession(self.hass)
+        try:
+            async with session.post(
+                f"http://{self.host}/json/state", json={"on": on}, timeout=10
+            ) as resp:
+                if resp.status != 200:
+                    _LOGGER.warning(
+                        "WLED at %s returned HTTP %s", self.host, resp.status
+                    )
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.warning("Could not reach WLED at %s: %s", self.host, err)
+
+    async def _get_strip_power(self) -> bool:
+        session = async_get_clientsession(self.hass)
+        try:
+            async with session.get(
+                f"http://{self.host}/json/state", timeout=10
+            ) as resp:
+                return bool((await resp.json()).get("on", True))
+        except Exception:  # noqa: BLE001
+            return True
+
+    async def _apply_quiet_transition(self, entering: bool) -> None:
+        """Handle strip power for the strip_off quiet mode."""
+        if self.quiet_mode != "strip_off":
+            return
+        if entering:
+            self._strip_was_on = await self._get_strip_power()
+            await self._set_strip_power(False)
+        elif self._strip_was_on:
+            await self._set_strip_power(True)
 
     async def flash(self, leds: list[int], color: str, times: int = 3) -> None:
         """Briefly flash specific LEDs so the user can locate them."""
@@ -384,12 +418,20 @@ class TaskMapManager:
                 quiet = self._in_quiet()
                 if quiet != self._was_quiet:
                     self._was_quiet = quiet
-                    self.hass.async_create_task(self.push())
+
+                    async def _transition() -> None:
+                        await self._apply_quiet_transition(quiet)
+                        await self.push()
+
+                    self.hass.async_create_task(_transition())
 
             self._was_quiet = self._in_quiet()
             self._unsub_minute = async_track_time_interval(
                 self.hass, _minute, timedelta(seconds=60)
             )
+            # If HA (re)starts inside a strip_off quiet window, apply it now
+            if self._was_quiet and self.quiet_mode == "strip_off":
+                await self._set_strip_power(False)
 
         self.refresh_all()
         await self.push()

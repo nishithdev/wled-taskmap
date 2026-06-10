@@ -72,7 +72,13 @@ Each rule has an effect: **solid** (default), **blink** (on/off every second —
 
 ## Quiet hours
 
-At the bottom of the card: choose **Dim alerts** (25% brightness) or **Hide alerts** between two times (windows may cross midnight). Alerts reappear at full brightness when the window ends.
+At the bottom of the card, choose what happens between two times (windows may cross midnight):
+
+- **Dim alerts** — alert LEDs at 25% brightness
+- **Hide alerts** — alert LEDs off; the rest of the strip is untouched
+- **Turn strip off** — powers the whole WLED strip off for the night and back on when the window ends (only if it was on when quiet hours began)
+
+Alerts reappear at full brightness when the window ends. Quiet hours are evaluated in Home Assistant's configured timezone.
 
 ## Strip state restore
 

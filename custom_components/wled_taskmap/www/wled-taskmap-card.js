@@ -319,7 +319,9 @@ class WledTaskmapCard extends HTMLElement {
           : editingTodo
           ? `<div class="hint">To-do list: lights up whenever it has pending items.</div>`
           : isNumeric
-          ? `<div class="step"><span class="num">3</span> …when its value is</div>
+          ? `<div class="step"><span class="num">3</span> What should the LEDs show?</div>
+             <div class="chips"><button class="chip tobar">▮▯ Its level, as a ${this._form.colorStyle !== "single" ? this._form.colorStyle + " " : ""}bar (no conditions needed)</button></div>
+             <div class="hint" style="margin:8px 0 4px">…or alert only when its value is:</div>
              <div class="chips">
                <select class="cmpop">
                  <option value="<">below</option><option value=">">above</option>
@@ -333,7 +335,7 @@ class WledTaskmapCard extends HTMLElement {
              </div>
              <div class="chips" style="margin-top:6px">${[...this._form.states].filter((s)=>!["unavailable","unknown"].includes(s)).map((s) =>
                `<button class="chip on" data-state="${s}">${s} ✕</button>`).join("")}</div>
-             <div class="hint">Current value: <b>${entState.state}</b>${entState.attributes.unit_of_measurement ? " " + entState.attributes.unit_of_measurement : ""}. E.g. battery: choose “below 20” to alert when low. Tip: the <b>fill</b> effect below shows the value as a bar instead.</div>`
+             <div class="hint">Current value: <b>${entState.state}</b>${entState.attributes.unit_of_measurement ? " " + entState.attributes.unit_of_measurement : ""}. E.g. battery: “below 20” to alert when low.</div>`
           : `<div class="step"><span class="num">3</span> …is in one of these states</div><div class="chips">${stateChips}
              <input class="newstate" placeholder="other…" size="8"></div>
              <div class="hint">Number sensor? Type a comparison instead, e.g. <b>&gt;80</b> or <b>&lt;20</b></div>`}
@@ -477,6 +479,17 @@ class WledTaskmapCard extends HTMLElement {
         this._form.states.has(s) ? this._form.states.delete(s) : this._form.states.add(s);
         this._render();
       }));
+    const tobar = root.querySelector(".tobar");
+    tobar?.addEventListener("click", () => {
+      this._form.effect = "fill";
+      const st = this._hass.states[this._form.entity.trim()];
+      const unit = st?.attributes?.unit_of_measurement;
+      const val = parseFloat(st?.state);
+      if (unit === "%" || (!isNaN(val) && val >= 0 && val <= 100)) {
+        this._form.fillMin = 0; this._form.fillMax = 100;
+      }
+      this._render();
+    });
     const addcmp = root.querySelector(".addcmp");
     addcmp?.addEventListener("click", () => {
       const op = root.querySelector(".cmpop").value;

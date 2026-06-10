@@ -92,17 +92,19 @@ Tap ✏️ to change anything, 🗑 to remove.
 
 A single 30-LED shelf strip can act as a whole-house dashboard by giving each topic its own block of LEDs:
 
-<p align="center"><img src="assets/zones-example.svg" width="640" alt="One strip split into network, chores, and printer zones"></p>
+<p align="center"><img src="assets/zones-example.svg" width="640" alt="One strip split into network, phone battery, and printer zones"></p>
 
 | Zone | LEDs | Alert | Color / effect |
 |---|---|---|---|
 | Network | 0–2 | `binary_sensor.nas_online` is `off` for 5 min | red, blink |
 | Network | 3–5 | `sensor.optiplex7050_cpu_temp` is `unavailable` for 10 min | red, solid |
 | Network | 6–9 | `update.home_assistant_core` is `on` (update available) | purple, solid |
-| Chores | 10–14 | `todo.shopping_list` has pending items | orange, solid |
-| Chores | 15–19 | `todo.chores` has `>3` items | orange, pulse |
+| Battery | 10–19 | `sensor.pixel_10_pro_xl_battery_level` — "its level, as a bar" (0–100) | red→green **gradient fill**: a live battery gauge that ramps red → orange → yellow → green as it charges |
+| Battery | 10–19 | same sensor, `below 20` | red, blink — overrides the gauge when critically low (later rules win) |
 | Printer | 20–28 | `sensor.p1s_print_progress` from 0 to 100 | blue, **fill** (live progress bar) |
 | Printer | 29 | `sensor.p1s_print_status` is `error` / `unavailable` | red, blink |
+
+(To-do lists work the same way: map `todo.shopping_list` to a block and it lights when items are pending, or use fill with a 0→10 range to show the count as a bar.)
 
 Tips that make multi-LED setups work well:
 

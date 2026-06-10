@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import timedelta
 from pathlib import Path
+
+from homeassistant.util import dt as dt_util
 
 import voluptuous as vol
 
@@ -160,7 +162,7 @@ class TaskMapManager:
             eh, em = (int(x) for x in end.split(":"))
         except (ValueError, AttributeError):
             return False
-        now = datetime.now().time()
+        now = dt_util.now().time()  # HA-configured timezone, not server OS clock
         s = sh * 60 + sm
         e = eh * 60 + em
         n = now.hour * 60 + now.minute

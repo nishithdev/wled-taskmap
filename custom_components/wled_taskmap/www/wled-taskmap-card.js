@@ -63,6 +63,7 @@ class WledTaskmapCard extends HTMLElement {
       if (this._entry) {
         this._rules = JSON.parse(JSON.stringify(this._entry.rules || []));
         this._quiet = Object.assign({ start: "", end: "", mode: "off" }, this._entry.quiet || {});
+        this._segment = this._entry.segment ?? 0;
       }
       this._render();
     } catch (e) {
@@ -95,6 +96,7 @@ class WledTaskmapCard extends HTMLElement {
       quiet_start: this._quiet.start || "",
       quiet_end: this._quiet.end || "",
       quiet_mode: this._quiet.mode || "off",
+      segment: parseInt(this._segment, 10) || 0,
     });
   }
 
@@ -433,6 +435,8 @@ class WledTaskmapCard extends HTMLElement {
             from <input type="time" class="qstart" value="${this._quiet.start}">
             to <input type="time" class="qend" value="${this._quiet.end}">
           </span>
+          <span style="margin-left:auto" title="WLED segment ID (leave 0 unless you use segments)">segment
+            <input type="number" class="segment" min="0" max="31" value="${this._segment ?? 0}" style="width:48px"></span>
         </div>
         <div class="flash"></div>
       </ha-card>`;
@@ -481,6 +485,11 @@ class WledTaskmapCard extends HTMLElement {
     qmode?.addEventListener("change", async () => {
       this._quiet.mode = qmode.value;
       await this._saveQuiet(); this._render();
+    });
+    const seg = root.querySelector(".segment");
+    seg?.addEventListener("change", async () => {
+      this._segment = seg.value;
+      await this._saveQuiet();
     });
     ["qstart", "qend"].forEach((cls) => {
       const inp = root.querySelector("." + cls);

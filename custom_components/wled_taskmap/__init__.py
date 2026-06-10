@@ -225,6 +225,7 @@ class TaskMapManager:
         self._unsub_blink = None
         self._unsub_minute = None
         self._unsub_registry = None
+        self._offline = False  # avoid log spam while WLED is unreachable
         # rule idx -> cancel callback for a pending "for N minutes" timer
         self._pending: dict[int, callback] = {}
         # rule idx -> last alert state written to the logbook
@@ -436,8 +437,14 @@ class TaskMapManager:
                     _LOGGER.warning(
                         "WLED at %s returned HTTP %s", self.host, resp.status
                     )
+                elif self._offline:
+                    self._offline = False
+                    _LOGGER.info("WLED at %s is reachable again", self.host)
         except Exception as err:  # noqa: BLE001
-            _LOGGER.warning("Could not reach WLED at %s: %s", self.host, err)
+            # Warn once, then stay quiet until the device recovers
+            log = _LOGGER.debug if self._offline else _LOGGER.warning
+            log("Could not reach WLED at %s: %s", self.host, err)
+            self._offline = True
 
     async def push(self) -> None:
         """Reconcile the strip with the current alert state."""
@@ -526,6 +533,8 @@ class TaskMapManager:
 
     async def flash(self, leds: list[int], color: str, times: int = 3) -> None:
         """Briefly flash specific LEDs so the user can locate them."""
+        strip_off_quiet = self._in_quiet() and self.quiet_mode == "strip_off"
+        was_on = await self._get_strip_power() if strip_off_quiet else True
         await self._take_snapshot()
         for _ in range(times):
             await self._send(
@@ -537,6 +546,8 @@ class TaskMapManager:
             )
             await asyncio.sleep(0.2)
         await self.push()
+        if strip_off_quiet and not was_on:
+            await self._set_strip_power(False)  # back to quiet-hours darkness
 
     # ---------- timers ----------
 
@@ -627,6 +638,14 @@ class TaskMapManager:
 
         @callback
         def _registry_updated(event: Event) -> None:
+            if event.data.get("action") == "remove":
+                # A watched entity was deleted: surface a Repairs issue now
+                if any(
+                    r[CONF_ENTITY_ID] == event.data.get("entity_id")
+                    for r in self.rules
+                ):
+                    self._check_missing_entities()
+                return
             if event.data.get("action") != "update":
                 return
             old = event.data.get("old_entity_id")
@@ -781,6 +800,7 @@ async def ws_save_rules(hass, connection, msg) -> None:
         vol.Required(CONF_QUIET_START): str,
         vol.Required(CONF_QUIET_END): str,
         vol.Required(CONF_QUIET_MODE): vol.In(QUIET_MODES),
+        vol.Optional(CONF_SEGMENT): vol.Coerce(int),
     }
 )
 @websocket_api.async_response
@@ -789,15 +809,15 @@ async def ws_save_settings(hass, connection, msg) -> None:
     if entry is None:
         connection.send_error(msg["id"], "not_found", "Config entry not found")
         return
-    hass.config_entries.async_update_entry(
-        entry,
-        options={
-            **entry.options,
-            CONF_QUIET_START: msg[CONF_QUIET_START],
-            CONF_QUIET_END: msg[CONF_QUIET_END],
-            CONF_QUIET_MODE: msg[CONF_QUIET_MODE],
-        },
-    )
+    options = {
+        **entry.options,
+        CONF_QUIET_START: msg[CONF_QUIET_START],
+        CONF_QUIET_END: msg[CONF_QUIET_END],
+        CONF_QUIET_MODE: msg[CONF_QUIET_MODE],
+    }
+    if CONF_SEGMENT in msg:
+        options[CONF_SEGMENT] = msg[CONF_SEGMENT]
+    hass.config_entries.async_update_entry(entry, options=options)
     connection.send_result(msg["id"], {"ok": True})
 
 

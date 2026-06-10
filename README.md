@@ -88,6 +88,31 @@ Tap ✏️ to change anything, 🗑 to remove.
 
 ---
 
+## Example: zoning one strip into a status board
+
+A single 30-LED shelf strip can act as a whole-house dashboard by giving each topic its own block of LEDs:
+
+<p align="center"><img src="assets/zones-example.svg" width="640" alt="One strip split into network, chores, and printer zones"></p>
+
+| Zone | LEDs | Alert | Color / effect |
+|---|---|---|---|
+| Network | 0–2 | `binary_sensor.nas_online` is `off` for 5 min | red, blink |
+| Network | 3–5 | `sensor.optiplex7050_cpu_temp` is `unavailable` for 10 min | red, solid |
+| Network | 6–9 | `update.home_assistant_core` is `on` (update available) | purple, solid |
+| Chores | 10–14 | `todo.shopping_list` has pending items | orange, solid |
+| Chores | 15–19 | `todo.chores` has `>3` items | orange, pulse |
+| Printer | 20–24 | `sensor.p1s_print_status` is `error` / `unavailable` | red, blink |
+| Printer | 25–29 | `sensor.p1s_nozzle_temperature` is `>250` | yellow, pulse |
+
+Tips that make multi-LED setups work well:
+
+- **Leave a dark LED between zones** so adjacent alerts don't read as one blob.
+- **Same color per zone, different effect per severity** — solid = info, pulse = warning, blink = act now. Easier to learn than ten colors.
+- **Use the 🔦 test button** after building each zone to confirm the physical layout matches what you tapped.
+- **Overlap on purpose**: map a "panic" rule (e.g. `binary_sensor.water_leak` is `on`) to *all 30 LEDs* in blinking red — rules later in the list win, so it overrides every zone when it fires.
+
+Running **two strips** (e.g. desk + hallway)? Add the integration once per WLED device and place one card per device on your dashboard — each card binds to its own strip, so the desk strip can track your printer while the hallway strip tracks the household lists.
+
 ## Common questions
 
 **Which states should I pick?**

@@ -24,6 +24,7 @@ from homeassistant.helpers.event import (
     async_track_state_change_event,
     async_track_time_interval,
 )
+from homeassistant.helpers.storage import Store
 
 from .const import (
     ATTR_COLOR,
@@ -213,6 +214,10 @@ class TaskMapManager:
         self.manual_alerts: dict[int, str] = {}
         # snapshot of the strip (led -> hex) taken before we started painting
         self.snapshot: dict[int, str] | None = None
+        # LEDs currently holding an alert color; persisted so reloads/restarts
+        # can clean up LEDs that no current rule covers anymore
+        self._painted: set[int] = set()
+        self._store = Store(hass, 1, f"{DOMAIN}.painted_{entry.entry_id}")
         self._phase = True  # blink phase
         self._was_quiet: bool | None = None
         self._strip_was_on = True  # strip power state before strip_off quiet
@@ -400,8 +405,12 @@ class TaskMapManager:
             ) as resp:
                 data = await resp.json()
                 colors = data.get("leds", [])
+                # LEDs we previously painted hold alert colors, not the user's
+                # lighting — snapshot those as black, not as "background".
                 self.snapshot = {
-                    led: colors[led] for led in self.all_leds if led < len(colors)
+                    led: (OFF_COLOR if led in self._painted else colors[led])
+                    for led in self.all_leds
+                    if led < len(colors)
                 }
         except Exception as err:  # noqa: BLE001
             _LOGGER.debug("No live snapshot from %s: %s", self.host, err)
@@ -457,6 +466,7 @@ class TaskMapManager:
                 self._manage_blink(
                     any(e != "solid" for _, e in active.values())
                 )
+                await self._update_painted(set(active))
             else:
                 # No visible alerts: restore whatever the strip showed before
                 if self.snapshot is not None:
@@ -465,7 +475,14 @@ class TaskMapManager:
                         i_array.extend([led, self._background(led)])
                     await self._send(i_array)
                     self.snapshot = None
+                elif self._painted:
+                    # No snapshot (e.g. after restart) but LEDs still hold
+                    # alert colors from before: turn them off explicitly.
+                    await self._send(
+                        [v for led in sorted(self._painted) for v in (led, OFF_COLOR)]
+                    )
                 self._manage_blink(False)
+                await self._update_painted(set())
 
         async_dispatcher_send(self.hass, f"{SIGNAL_UPDATE}_{self.entry.entry_id}")
 
@@ -501,6 +518,11 @@ class TaskMapManager:
             await self._set_strip_power(False)
         elif self._strip_was_on:
             await self._set_strip_power(True)
+
+    async def _update_painted(self, painted: set[int]) -> None:
+        if painted != self._painted:
+            self._painted = painted
+            await self._store.async_save({"leds": sorted(painted)})
 
     async def flash(self, leds: list[int], color: str, times: int = 3) -> None:
         """Briefly flash specific LEDs so the user can locate them."""
@@ -630,6 +652,16 @@ class TaskMapManager:
 
     async def async_start(self) -> None:
         await self.fetch_info()
+        data = await self._store.async_load() or {}
+        self._painted = {int(x) for x in data.get("leds", [])}
+        # LEDs painted by a previous incarnation (deleted rules, restarts)
+        # that no current rule covers: turn them off now.
+        stale = self._painted - self.all_leds
+        if stale:
+            await self._send(
+                [v for led in sorted(stale) for v in (led, OFF_COLOR)]
+            )
+            await self._update_painted(self._painted - stale)
         self._check_missing_entities()
         self._setup_rename_listener()
         entity_ids = sorted({r[CONF_ENTITY_ID] for r in self.rules})

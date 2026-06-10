@@ -1,0 +1,46 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to WLED",
+        "data": {
+          "host": "WLED IP address or hostname",
+          "segment": "WLED segment ID"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not reach the WLED device. Check the IP address."
+    },
+    "abort": {
+      "already_configured": "This WLED device is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "WLED Task Map",
+        "menu_options": {
+          "add_mapping": "Add an entity → LED mapping",
+          "remove_mapping": "Remove mappings"
+        }
+      },
+      "add_mapping": {
+        "title": "Map an entity to an LED",
+        "data": {
+          "entity_id": "Entity to watch",
+          "led": "LED index (0-based)",
+          "color": "Alert color (hex, e.g. FF0000)",
+          "alert_states": "States that trigger the alert (comma-separated)"
+        },
+        "description": "To-do list entities alert automatically when they have pending items. For problem binary sensors, add 'on' to the alert states."
+      },
+      "remove_mapping": {
+        "title": "Remove mappings",
+        "data": {
+          "remove": "Mappings to remove"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,36 @@
+set_alert:
+  name: Set alert
+  description: Light a specific LED. Call this from automations (e.g. on automation failure, Todoist/Jira task overdue).
+  fields:
+    led:
+      name: LED index
+      description: Zero-based LED position on the strip.
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 1024
+          mode: box
+    color:
+      name: Color
+      description: Hex color (e.g. FF0000).
+      default: FF0000
+      selector:
+        text:
+
+clear_alert:
+  name: Clear alert
+  description: Turn off a specific manually-set LED.
+  fields:
+    led:
+      name: LED index
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 1024
+          mode: box
+
+clear_all:
+  name: Clear all alerts
+  description: Clear all manually-set LED alerts.

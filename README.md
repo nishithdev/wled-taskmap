@@ -24,15 +24,20 @@ Copy `custom_components/wled_taskmap` into your HA `config/custom_components/` f
 
 ## Setup
 
-1. **Settings → Devices & Services → Add Integration → WLED Task Map**.
-2. Enter your WLED device's IP address (and segment ID, usually `0`).
-3. Open the integration's **Configure** menu to add mappings:
-   - *Entity to watch* — any entity (sensor, automation, todo list…)
-   - *LED index* — 0-based position on the strip
-   - *Alert color* — hex, e.g. `FF0000`
-   - *Alert states* — which states light the LED (default: `unavailable,unknown,error,problem`; use `on` for problem binary sensors)
+1. **Settings → Devices & Services → Add Integration → WLED Task Map** — enter your WLED IP. That's the whole setup.
+2. On any dashboard: **Edit → Add card → WLED Task Map** (the card ships with the integration, no resource setup needed).
 
-The integration reloads automatically after each change.
+### Creating alerts — all visual, in the card
+
+The card shows your actual LED strip as a row of dots. To add an alert:
+
+1. Tap **＋ Add alert**
+2. Tap (or drag across) the LEDs that should light up
+3. Type the entity to watch (autocomplete)
+4. Tap the states that should trigger it (chips: unavailable, error, on… or type your own). To-do lists skip this — they trigger whenever items are pending.
+5. Pick a color from the color picker
+
+Saved instantly. Existing alerts are listed under the strip in plain language ("**Printer** is error / unavailable → LED 3, 4, 5") with edit ✏️ and delete 🗑 buttons.
 
 ## Catching failed automations / external tasks
 

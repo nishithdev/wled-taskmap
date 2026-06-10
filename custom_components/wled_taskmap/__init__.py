@@ -1,10 +1,13 @@
-"""WLED Task Map - light up individual LEDs when tasks/entities need attention."""
+"""WLED Task Map - light up LEDs when tasks/entities need attention."""
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 import voluptuous as vol
 
+from homeassistant.components import websocket_api
+from homeassistant.components.frontend import add_extra_js_url
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import Event, HomeAssistant, ServiceCall, callback
 from homeassistant.helpers import config_validation as cv
@@ -15,12 +18,14 @@ from homeassistant.helpers.event import async_track_state_change_event
 from .const import (
     ATTR_COLOR,
     ATTR_LED,
+    CARD_URL,
     CONF_ALERT_STATES,
     CONF_COLOR,
     CONF_ENTITY_ID,
     CONF_HOST,
     CONF_LED,
     CONF_LED_COUNT,
+    CONF_LEDS,
     CONF_MAPPINGS,
     CONF_SEGMENT,
     DEFAULT_ALERT_STATES,
@@ -47,6 +52,22 @@ SET_ALERT_SCHEMA = vol.Schema(
 CLEAR_ALERT_SCHEMA = vol.Schema({vol.Required(ATTR_LED): cv.positive_int})
 
 
+def normalize_rule(rule: dict) -> dict:
+    """Return a rule in current format, migrating legacy led/led_count."""
+    if CONF_LEDS in rule:
+        leds = sorted({int(x) for x in rule[CONF_LEDS]})
+    else:
+        start = int(rule.get(CONF_LED, 0))
+        count = max(1, int(rule.get(CONF_LED_COUNT, 1)))
+        leds = list(range(start, start + count))
+    return {
+        CONF_ENTITY_ID: rule[CONF_ENTITY_ID],
+        CONF_LEDS: leds,
+        CONF_COLOR: str(rule.get(CONF_COLOR, DEFAULT_COLOR)).lstrip("#").upper(),
+        CONF_ALERT_STATES: rule.get(CONF_ALERT_STATES, DEFAULT_ALERT_STATES),
+    }
+
+
 class TaskMapManager:
     """Watches entities and drives individual WLED LEDs."""
 
@@ -57,75 +78,86 @@ class TaskMapManager:
         self.segment: int = entry.options.get(
             CONF_SEGMENT, entry.data.get(CONF_SEGMENT, DEFAULT_SEGMENT)
         )
-        self.mappings: list[dict] = entry.options.get(CONF_MAPPINGS, [])
-        # entity_id -> mapping dict
-        self._by_entity = {m[CONF_ENTITY_ID]: m for m in self.mappings}
-        # led index -> color, for service-driven (manual / external app) alerts
+        self.rules: list[dict] = [
+            normalize_rule(r) for r in entry.options.get(CONF_MAPPINGS, [])
+        ]
+        self.led_count: int = 30  # refined from WLED /json/info at start
+        # rule index -> currently alerting
+        self.rule_alerts: dict[int, bool] = {}
+        # led index -> color, for service-driven (manual / external) alerts
         self.manual_alerts: dict[int, str] = {}
-        # entity_id -> bool currently alerting
-        self.entity_alerts: dict[str, bool] = {}
         self._unsub = None
 
     # ---------- alert evaluation ----------
 
-    def _is_alert(self, mapping: dict, state) -> bool:
+    def _is_alert(self, rule: dict, state) -> bool:
         if state is None:
             return False
-        entity_id = mapping[CONF_ENTITY_ID]
         value = state.state
-        # To-do lists report the number of pending items as their state.
-        if entity_id.startswith("todo."):
+        if rule[CONF_ENTITY_ID].startswith("todo."):
             try:
                 return int(float(value)) > 0
             except (ValueError, TypeError):
                 return value in ("unavailable", "unknown")
         alert_states = [
             s.strip().lower()
-            for s in mapping.get(CONF_ALERT_STATES, DEFAULT_ALERT_STATES).split(",")
+            for s in rule.get(CONF_ALERT_STATES, DEFAULT_ALERT_STATES).split(",")
             if s.strip()
         ]
         return value.lower() in alert_states
 
     def refresh_entity(self, entity_id: str) -> None:
-        mapping = self._by_entity.get(entity_id)
-        if mapping is None:
-            return
         state = self.hass.states.get(entity_id)
-        self.entity_alerts[entity_id] = self._is_alert(mapping, state)
+        for idx, rule in enumerate(self.rules):
+            if rule[CONF_ENTITY_ID] == entity_id:
+                self.rule_alerts[idx] = self._is_alert(rule, state)
 
-    def refresh_all_entities(self) -> None:
-        for entity_id in self._by_entity:
+    def refresh_all(self) -> None:
+        for entity_id in {r[CONF_ENTITY_ID] for r in self.rules}:
             self.refresh_entity(entity_id)
-
-    @staticmethod
-    def _mapping_leds(mapping: dict) -> range:
-        start = int(mapping[CONF_LED])
-        count = max(1, int(mapping.get(CONF_LED_COUNT, 1)))
-        return range(start, start + count)
 
     @property
     def active_alerts(self) -> dict[int, str]:
         """Return led -> color for everything currently alerting."""
         leds: dict[int, str] = {}
-        for entity_id, alerting in self.entity_alerts.items():
-            mapping = self._by_entity.get(entity_id)
-            if mapping is None or not alerting:
+        for idx, rule in enumerate(self.rules):
+            if not self.rule_alerts.get(idx):
                 continue
-            color = mapping.get(CONF_COLOR, DEFAULT_COLOR)
-            for led in self._mapping_leds(mapping):
-                leds[led] = color
+            for led in rule[CONF_LEDS]:
+                leds[led] = rule[CONF_COLOR]
         leds.update(self.manual_alerts)
         return leds
 
     @property
     def all_leds(self) -> set[int]:
         leds: set[int] = set()
-        for m in self.mappings:
-            leds.update(self._mapping_leds(m))
+        for rule in self.rules:
+            leds.update(rule[CONF_LEDS])
         leds.update(self.manual_alerts)
         return leds
 
+    @property
+    def alerting_entities(self) -> list[str]:
+        return sorted(
+            {
+                self.rules[idx][CONF_ENTITY_ID]
+                for idx, alerting in self.rule_alerts.items()
+                if alerting and idx < len(self.rules)
+            }
+        )
+
     # ---------- WLED control ----------
+
+    async def fetch_info(self) -> None:
+        session = async_get_clientsession(self.hass)
+        try:
+            async with session.get(
+                f"http://{self.host}/json/info", timeout=10
+            ) as resp:
+                info = await resp.json()
+                self.led_count = int(info.get("leds", {}).get("count", 30))
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug("Could not fetch WLED info from %s: %s", self.host, err)
 
     async def push(self) -> None:
         """Push current alert state to the WLED strip (individual LED control)."""
@@ -133,28 +165,28 @@ class TaskMapManager:
         i_array: list = []
         for led in sorted(self.all_leds):
             i_array.extend([led, active.get(led, OFF_COLOR)])
-        if not i_array:
-            return
-        payload: dict = {"seg": [{"id": self.segment, "i": i_array}]}
-        if active:
-            payload["on"] = True
-        session = async_get_clientsession(self.hass)
-        try:
-            async with session.post(
-                f"http://{self.host}/json/state", json=payload, timeout=10
-            ) as resp:
-                if resp.status != 200:
-                    _LOGGER.warning(
-                        "WLED at %s returned HTTP %s", self.host, resp.status
-                    )
-        except Exception as err:  # noqa: BLE001
-            _LOGGER.warning("Could not reach WLED at %s: %s", self.host, err)
+        if i_array:
+            payload: dict = {"seg": [{"id": self.segment, "i": i_array}]}
+            if active:
+                payload["on"] = True
+            session = async_get_clientsession(self.hass)
+            try:
+                async with session.post(
+                    f"http://{self.host}/json/state", json=payload, timeout=10
+                ) as resp:
+                    if resp.status != 200:
+                        _LOGGER.warning(
+                            "WLED at %s returned HTTP %s", self.host, resp.status
+                        )
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.warning("Could not reach WLED at %s: %s", self.host, err)
         async_dispatcher_send(self.hass, f"{SIGNAL_UPDATE}_{self.entry.entry_id}")
 
     # ---------- lifecycle ----------
 
     async def async_start(self) -> None:
-        entity_ids = list(self._by_entity)
+        await self.fetch_info()
+        entity_ids = sorted({r[CONF_ENTITY_ID] for r in self.rules})
         if entity_ids:
 
             @callback
@@ -165,7 +197,7 @@ class TaskMapManager:
             self._unsub = async_track_state_change_event(
                 self.hass, entity_ids, _state_changed
             )
-        self.refresh_all_entities()
+        self.refresh_all()
         await self.push()
 
     async def async_stop(self) -> None:
@@ -174,30 +206,98 @@ class TaskMapManager:
             self._unsub = None
 
 
+# ---------- websocket API (used by the Lovelace card) ----------
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/get_config"})
+@callback
+def ws_get_config(hass, connection, msg) -> None:
+    entries = []
+    for entry_id, manager in hass.data.get(DOMAIN, {}).items():
+        entries.append(
+            {
+                "entry_id": entry_id,
+                "host": manager.host,
+                "segment": manager.segment,
+                "led_count": manager.led_count,
+                "rules": manager.rules,
+                "active": manager.active_alerts,
+            }
+        )
+    connection.send_result(msg["id"], {"entries": entries})
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): f"{DOMAIN}/save_rules",
+        vol.Required("entry_id"): str,
+        vol.Required("rules"): [
+            {
+                vol.Required(CONF_ENTITY_ID): str,
+                vol.Required(CONF_LEDS): [int],
+                vol.Required(CONF_COLOR): str,
+                vol.Required(CONF_ALERT_STATES): str,
+            }
+        ],
+    }
+)
+@websocket_api.async_response
+async def ws_save_rules(hass, connection, msg) -> None:
+    entry = hass.config_entries.async_get_entry(msg["entry_id"])
+    if entry is None:
+        connection.send_error(msg["id"], "not_found", "Config entry not found")
+        return
+    rules = [normalize_rule(r) for r in msg["rules"]]
+    hass.config_entries.async_update_entry(
+        entry, options={**entry.options, CONF_MAPPINGS: rules}
+    )
+    connection.send_result(msg["id"], {"ok": True})
+
+
+# ---------- setup ----------
+
+
+async def _async_setup_shared(hass: HomeAssistant) -> None:
+    """One-time setup: card asset + websocket commands."""
+    if hass.data.get(f"{DOMAIN}_shared"):
+        return
+    hass.data[f"{DOMAIN}_shared"] = True
+
+    card_path = Path(__file__).parent / "www" / "wled-taskmap-card.js"
+    try:
+        from homeassistant.components.http import StaticPathConfig
+
+        await hass.http.async_register_static_paths(
+            [StaticPathConfig(CARD_URL, str(card_path), True)]
+        )
+    except ImportError:
+        hass.http.register_static_path(CARD_URL, str(card_path), True)
+    add_extra_js_url(hass, CARD_URL)
+
+    websocket_api.async_register_command(hass, ws_get_config)
+    websocket_api.async_register_command(hass, ws_save_rules)
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    await _async_setup_shared(hass)
+
     manager = TaskMapManager(hass, entry)
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = manager
     await manager.async_start()
 
-    async def _get_manager(call: ServiceCall) -> TaskMapManager:
-        # Single-entry oriented; if multiple WLED hosts are configured the
-        # first loaded entry handles service calls unless extended later.
-        return manager
-
     async def handle_set_alert(call: ServiceCall) -> None:
-        mgr = await _get_manager(call)
-        mgr.manual_alerts[int(call.data[ATTR_LED])] = call.data[ATTR_COLOR].lstrip("#")
-        await mgr.push()
+        manager.manual_alerts[int(call.data[ATTR_LED])] = call.data[
+            ATTR_COLOR
+        ].lstrip("#")
+        await manager.push()
 
     async def handle_clear_alert(call: ServiceCall) -> None:
-        mgr = await _get_manager(call)
-        mgr.manual_alerts.pop(int(call.data[ATTR_LED]), None)
-        await mgr.push()
+        manager.manual_alerts.pop(int(call.data[ATTR_LED]), None)
+        await manager.push()
 
     async def handle_clear_all(call: ServiceCall) -> None:
-        mgr = await _get_manager(call)
-        mgr.manual_alerts.clear()
-        await mgr.push()
+        manager.manual_alerts.clear()
+        await manager.push()
 
     hass.services.async_register(
         DOMAIN, SERVICE_SET_ALERT, handle_set_alert, schema=SET_ALERT_SCHEMA

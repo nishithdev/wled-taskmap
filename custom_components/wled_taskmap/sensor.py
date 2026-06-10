@@ -7,7 +7,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import CONF_ENTITY_ID, CONF_LED, DOMAIN, SIGNAL_UPDATE
+from .const import CONF_ENTITY_ID, CONF_LEDS, DOMAIN, SIGNAL_UPDATE
 
 
 async def async_setup_entry(
@@ -50,14 +50,11 @@ class ActiveAlertsSensor(SensorEntity):
 
     @property
     def extra_state_attributes(self) -> dict:
-        alerting_entities = [
-            e for e, alerting in self._manager.entity_alerts.items() if alerting
-        ]
         return {
-            "alerting_entities": alerting_entities,
+            "alerting_entities": self._manager.alerting_entities,
             "manual_leds": sorted(self._manager.manual_alerts),
             "watched": [
-                {"entity": m[CONF_ENTITY_ID], "led": m[CONF_LED]}
-                for m in self._manager.mappings
+                {"entity": r[CONF_ENTITY_ID], "leds": r[CONF_LEDS]}
+                for r in self._manager.rules
             ],
         }

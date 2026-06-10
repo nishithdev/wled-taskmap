@@ -6,12 +6,15 @@ CONF_HOST = "host"
 CONF_SEGMENT = "segment"
 CONF_MAPPINGS = "mappings"
 
-# Per-mapping keys
+# Rule keys
 CONF_ENTITY_ID = "entity_id"
-CONF_LED = "led"
-CONF_LED_COUNT = "led_count"
+CONF_LEDS = "leds"
 CONF_COLOR = "color"
 CONF_ALERT_STATES = "alert_states"
+
+# Legacy rule keys (pre-0.4.0), migrated automatically
+CONF_LED = "led"
+CONF_LED_COUNT = "led_count"
 
 DEFAULT_SEGMENT = 0
 DEFAULT_COLOR = "FF0000"
@@ -26,3 +29,5 @@ ATTR_LED = "led"
 ATTR_COLOR = "color"
 
 SIGNAL_UPDATE = f"{DOMAIN}_update"
+
+CARD_URL = f"/{DOMAIN}/wled-taskmap-card.js"

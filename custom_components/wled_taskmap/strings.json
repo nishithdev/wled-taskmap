@@ -3,10 +3,9 @@
     "step": {
       "user": {
         "title": "Connect to WLED",
-        "description": "Enter the IP address of your WLED device (find it in the WLED app or your router). Leave segment at 0 unless you've split your strip into segments.",
+        "description": "Enter the IP address of your WLED device (find it in the WLED app or your router). After setup, add the 'WLED Task Map' card to any dashboard to create LED alerts visually.",
         "data": {
-          "host": "WLED IP address or hostname",
-          "segment": "WLED segment ID"
+          "host": "WLED IP address or hostname"
         }
       }
     },
@@ -15,52 +14,6 @@
     },
     "abort": {
       "already_configured": "This WLED device is already configured."
-    }
-  },
-  "options": {
-    "step": {
-      "init": {
-        "title": "WLED Task Map",
-        "menu_options": {
-          "add_mapping": "➕ Add alert (entity → LED)",
-          "edit_select": "✏️ Edit an alert",
-          "remove_mapping": "🗑 Remove alerts"
-        }
-      },
-      "add_mapping": {
-        "title": "Add alert",
-        "description": "When the entity enters one of the trigger states, its LED lights in the chosen color. To-do lists trigger automatically whenever they have pending items — no states needed.",
-        "data": {
-          "entity_id": "Entity to watch",
-          "led": "LED number (first pixel = 0)",
-          "led_count": "Number of LEDs (block size)",
-          "color": "Alert color",
-          "alert_states": "Trigger states (pick or type your own)"
-        }
-      },
-      "edit_select": {
-        "title": "Edit an alert",
-        "data": {
-          "mapping": "Which alert?"
-        }
-      },
-      "edit_mapping": {
-        "title": "Edit alert",
-        "description": "Change anything and save.",
-        "data": {
-          "entity_id": "Entity to watch",
-          "led": "LED number (first pixel = 0)",
-          "led_count": "Number of LEDs (block size)",
-          "color": "Alert color",
-          "alert_states": "Trigger states (pick or type your own)"
-        }
-      },
-      "remove_mapping": {
-        "title": "Remove alerts",
-        "data": {
-          "remove": "Alerts to remove"
-        }
-      }
     }
   }
 }

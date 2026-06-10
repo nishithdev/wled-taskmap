@@ -3,9 +3,10 @@
   "name": "WLED Task Map",
   "codeowners": ["@nishithdev"],
   "config_flow": true,
+  "dependencies": ["frontend", "http", "websocket_api"],
   "documentation": "https://github.com/nishithdev/wled-taskmap",
   "iot_class": "local_push",
   "issue_tracker": "https://github.com/nishithdev/wled-taskmap/issues",
   "requirements": [],
-  "version": "0.3.0"
+  "version": "0.4.0"
 }

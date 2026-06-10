@@ -12,6 +12,7 @@ CONF_LEDS = "leds"
 CONF_COLOR = "color"
 CONF_ALERT_STATES = "alert_states"
 CONF_EFFECT = "effect"  # solid | blink | pulse
+CONF_FOR_MINUTES = "for_minutes"  # flap protection: condition must hold this long
 
 # Quiet hours (entry options)
 CONF_QUIET_START = "quiet_start"  # "22:00"

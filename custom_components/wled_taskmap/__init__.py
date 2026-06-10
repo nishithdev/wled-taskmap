@@ -16,8 +16,11 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import Event, HomeAssistant, ServiceCall, callback
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.event import (
+    async_call_later,
     async_track_state_change_event,
     async_track_time_interval,
 )
@@ -31,6 +34,7 @@ from .const import (
     CONF_COLOR,
     CONF_EFFECT,
     CONF_ENTITY_ID,
+    CONF_FOR_MINUTES,
     CONF_HOST,
     CONF_LED,
     CONF_LED_COUNT,
@@ -82,12 +86,17 @@ def normalize_rule(rule: dict) -> dict:
     effect = rule.get(CONF_EFFECT, DEFAULT_EFFECT)
     if effect not in EFFECTS:
         effect = DEFAULT_EFFECT
+    try:
+        for_minutes = max(0.0, float(rule.get(CONF_FOR_MINUTES, 0) or 0))
+    except (ValueError, TypeError):
+        for_minutes = 0.0
     return {
         CONF_ENTITY_ID: rule[CONF_ENTITY_ID],
         CONF_LEDS: leds,
         CONF_COLOR: str(rule.get(CONF_COLOR, DEFAULT_COLOR)).lstrip("#").upper(),
         CONF_ALERT_STATES: rule.get(CONF_ALERT_STATES, DEFAULT_ALERT_STATES),
         CONF_EFFECT: effect,
+        CONF_FOR_MINUTES: for_minutes,
     }
 
 
@@ -144,6 +153,9 @@ class TaskMapManager:
         self._unsub_state = None
         self._unsub_blink = None
         self._unsub_minute = None
+        self._unsub_registry = None
+        # rule idx -> cancel callback for a pending "for N minutes" timer
+        self._pending: dict[int, callback] = {}
         self._lock = asyncio.Lock()
 
     # ---------- quiet hours ----------
@@ -195,11 +207,43 @@ class TaskMapManager:
                 return value in ("unavailable", "unknown")
         return any(_match_condition(t, value) for t in tokens)
 
+    def _cancel_pending(self, idx: int) -> None:
+        if idx in self._pending:
+            self._pending.pop(idx)()
+
     def refresh_entity(self, entity_id: str) -> None:
         state = self.hass.states.get(entity_id)
         for idx, rule in enumerate(self.rules):
-            if rule[CONF_ENTITY_ID] == entity_id:
-                self.rule_alerts[idx] = self._is_alert(rule, state)
+            if rule[CONF_ENTITY_ID] != entity_id:
+                continue
+            raw = self._is_alert(rule, state)
+            if not raw:
+                self._cancel_pending(idx)
+                self.rule_alerts[idx] = False
+                continue
+            if self.rule_alerts.get(idx):
+                continue  # already alerting
+            delay = rule.get(CONF_FOR_MINUTES, 0)
+            if delay <= 0:
+                self.rule_alerts[idx] = True
+            elif idx not in self._pending:
+                self._pending[idx] = async_call_later(
+                    self.hass, delay * 60, self._make_delayed(idx)
+                )
+
+    def _make_delayed(self, idx: int):
+        @callback
+        def _fire(_now) -> None:
+            self._pending.pop(idx, None)
+            if idx >= len(self.rules):
+                return
+            rule = self.rules[idx]
+            state = self.hass.states.get(rule[CONF_ENTITY_ID])
+            if self._is_alert(rule, state):  # still true after the delay
+                self.rule_alerts[idx] = True
+                self.hass.async_create_task(self.push())
+
+        return _fire
 
     def refresh_all(self) -> None:
         for entity_id in {r[CONF_ENTITY_ID] for r in self.rules}:
@@ -395,10 +439,66 @@ class TaskMapManager:
             self._unsub_blink = None
             self._phase = True
 
+    # ---------- repairs & renames ----------
+
+    def _check_missing_entities(self) -> None:
+        """Raise a Repairs issue for rules watching entities that don't exist."""
+        registry = er.async_get(self.hass)
+        watched = {r[CONF_ENTITY_ID] for r in self.rules}
+        for entity_id in watched:
+            issue_id = f"missing_{self.entry.entry_id}_{entity_id}"
+            missing = (
+                self.hass.states.get(entity_id) is None
+                and registry.async_get(entity_id) is None
+            )
+            if missing:
+                ir.async_create_issue(
+                    self.hass,
+                    DOMAIN,
+                    issue_id,
+                    is_fixable=False,
+                    severity=ir.IssueSeverity.WARNING,
+                    translation_key="missing_entity",
+                    translation_placeholders={
+                        "entity_id": entity_id,
+                        "host": self.host,
+                    },
+                )
+            else:
+                ir.async_delete_issue(self.hass, DOMAIN, issue_id)
+
+    def _setup_rename_listener(self) -> None:
+        """Rewrite rules automatically when a watched entity is renamed."""
+
+        @callback
+        def _registry_updated(event: Event) -> None:
+            if event.data.get("action") != "update":
+                return
+            old = event.data.get("old_entity_id")
+            new = event.data.get("entity_id")
+            if not old or not new or old == new:
+                return
+            if not any(r[CONF_ENTITY_ID] == old for r in self.rules):
+                return
+            rules = [
+                {**r, CONF_ENTITY_ID: new} if r[CONF_ENTITY_ID] == old else r
+                for r in self.rules
+            ]
+            _LOGGER.info("Watched entity renamed %s -> %s; updating rules", old, new)
+            self.hass.config_entries.async_update_entry(
+                self.entry, options={**self.entry.options, CONF_MAPPINGS: rules}
+            )  # triggers reload via update listener
+
+        self._unsub_registry = self.hass.bus.async_listen(
+            er.EVENT_ENTITY_REGISTRY_UPDATED, _registry_updated
+        )
+
     # ---------- lifecycle ----------
 
     async def async_start(self) -> None:
         await self.fetch_info()
+        self._check_missing_entities()
+        self._setup_rename_listener()
         entity_ids = sorted({r[CONF_ENTITY_ID] for r in self.rules})
         if entity_ids:
 
@@ -437,10 +537,18 @@ class TaskMapManager:
         await self.push()
 
     async def async_stop(self) -> None:
-        for unsub in (self._unsub_state, self._unsub_blink, self._unsub_minute):
+        for unsub in (
+            self._unsub_state,
+            self._unsub_blink,
+            self._unsub_minute,
+            self._unsub_registry,
+        ):
             if unsub:
                 unsub()
-        self._unsub_state = self._unsub_blink = self._unsub_minute = None
+        self._unsub_state = self._unsub_blink = None
+        self._unsub_minute = self._unsub_registry = None
+        for idx in list(self._pending):
+            self._cancel_pending(idx)
 
 
 # ---------- websocket API (used by the Lovelace card) ----------
@@ -480,6 +588,7 @@ def ws_get_config(hass, connection, msg) -> None:
                 vol.Required(CONF_COLOR): str,
                 vol.Required(CONF_ALERT_STATES): str,
                 vol.Optional(CONF_EFFECT, default=DEFAULT_EFFECT): vol.In(EFFECTS),
+                vol.Optional(CONF_FOR_MINUTES, default=0): vol.Coerce(float),
             }
         ],
     }

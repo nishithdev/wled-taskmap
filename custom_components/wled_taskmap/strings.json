@@ -1,5 +1,6 @@
 {
   "config": {
+    "flow_title": "{name}",
     "step": {
       "user": {
         "title": "Connect to WLED",
@@ -7,13 +8,24 @@
         "data": {
           "host": "WLED IP address or hostname"
         }
+      },
+      "confirm": {
+        "title": "WLED device found",
+        "description": "Set up WLED Task Map for {name} ({host})? After setup, add the 'WLED Task Map' card to any dashboard to create LED alerts visually."
       }
     },
     "error": {
       "cannot_connect": "Could not reach the WLED device. Check the IP address."
     },
     "abort": {
-      "already_configured": "This WLED device is already configured."
+      "already_configured": "This WLED device is already configured.",
+      "cannot_connect": "Could not reach the WLED device."
+    }
+  },
+  "issues": {
+    "missing_entity": {
+      "title": "WLED Task Map rule watches a missing entity",
+      "description": "An LED alert on {host} watches `{entity_id}`, but that entity no longer exists. Its LED will never light. Open the WLED Task Map card and edit or delete that alert."
     }
   }
 }

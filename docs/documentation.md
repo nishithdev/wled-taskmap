@@ -84,6 +84,19 @@ Alerts reappear at full brightness when the window ends. Quiet hours are evaluat
 
 Before painting its first alert, the integration snapshots what the mapped LEDs were showing (via WLED's live view) and restores those exact colors when all alerts clear — so alerts no longer leave black pixels behind on a strip running an effect or preset.
 
+## Auto-discovery
+
+WLED devices on your network are discovered automatically (zeroconf) — they appear in Settings → Devices & Services as "Discovered", one click to add. Manual setup by IP still works.
+
+## Flap protection ("only after N minutes")
+
+Each rule has an optional delay: the condition must hold continuously for N minutes before the LED lights. Use it for devices that briefly drop off WiFi — e.g. `unavailable` for 5 minutes. If the entity recovers within the window, nothing lights. Clearing is always immediate.
+
+## Repairs and entity renames
+
+- If a watched entity is **renamed**, rules update automatically — nothing breaks.
+- If a watched entity is **deleted**, a warning appears in Settings → Repairs pointing at the dead rule so you can edit or remove it in the card.
+
 ## Locating LEDs
 
 Tap 🔦 on any rule to flash its LEDs three times on the physical strip. Tap a rule's text to open the watched entity's more-info dialog.

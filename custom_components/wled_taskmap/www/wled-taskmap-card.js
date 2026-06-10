@@ -129,9 +129,10 @@ class WledTaskmapCard extends HTMLElement {
         states: new Set(r.alert_states.split(",").map((s) => s.trim()).filter(Boolean)),
         color: "#" + r.color.replace("#", ""),
         effect: r.effect || "solid",
+        forMin: r.for_minutes || 0,
       };
     } else {
-      this._form = { entity: "", states: new Set(["unavailable", "error"]), color: "#FF0000", effect: "solid" };
+      this._form = { entity: "", states: new Set(["unavailable", "error"]), color: "#FF0000", effect: "solid", forMin: 0 };
     }
     this._render();
   }
@@ -156,6 +157,7 @@ class WledTaskmapCard extends HTMLElement {
       color: this._form.color.replace("#", "").toUpperCase(),
       alert_states: [...this._form.states].join(","),
       effect: this._form.effect || "solid",
+      for_minutes: Math.max(0, parseFloat(this._form.forMin) || 0),
     };
     if (this._editing !== null) this._rules[this._editing] = rule;
     else this._rules.push(rule);
@@ -232,7 +234,8 @@ class WledTaskmapCard extends HTMLElement {
         ? "has pending items"
         : `is ${r.alert_states.split(",").join(" / ")}`;
       const ledsTxt = r.leds.length > 6 ? `${r.leds.length} LEDs` : `LED ${r.leds.join(", ")}`;
-      const fx = r.effect === "blink" ? " · ⚡ blink" : r.effect === "pulse" ? " · 〰 pulse" : "";
+      const fx = (r.effect === "blink" ? " · ⚡ blink" : r.effect === "pulse" ? " · 〰 pulse" : "")
+        + (r.for_minutes > 0 ? ` · ⏱ after ${r.for_minutes}m` : "");
       return `<div class="rule">
         <span class="dot" style="background:#${r.color}"></span>
         <span class="rtext" data-info="${r.entity_id}" title="Show entity details"><b>${name}</b> ${when} → ${ledsTxt}${fx}</span>
@@ -269,6 +272,9 @@ class WledTaskmapCard extends HTMLElement {
             ${["solid","blink","pulse"].map((e) =>
               `<button class="chip ${this._form.effect === e ? "on" : ""}" data-effect="${e}">${e === "blink" ? "⚡ " : e === "pulse" ? "〰 " : ""}${e}</button>`).join("")}
           </span></div>
+        <div class="step">⏱ Only alert after
+          <input type="number" class="formin" min="0" step="0.5" value="${this._form.forMin}" style="width:60px"> minutes in that state
+          <span class="hint" style="display:inline">(0 = immediately; avoids flickering from devices that briefly drop off)</span></div>
         <div class="actions">
           <button class="primary save">${this._editing !== null ? "Save changes" : "Add alert"}</button>
           <button class="cancel">Cancel</button>
@@ -398,6 +404,8 @@ class WledTaskmapCard extends HTMLElement {
     });
     const color = root.querySelector(".color");
     color?.addEventListener("input", () => { this._form.color = color.value; this._render(); });
+    const formin = root.querySelector(".formin");
+    formin?.addEventListener("change", () => { this._form.forMin = formin.value; });
   }
 }
 

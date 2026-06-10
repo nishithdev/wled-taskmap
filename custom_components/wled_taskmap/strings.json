@@ -33,6 +33,7 @@
         "data": {
           "entity_id": "Entity to watch",
           "led": "LED number (first pixel = 0)",
+          "led_count": "Number of LEDs (block size)",
           "color": "Alert color",
           "alert_states": "Trigger states (pick or type your own)"
         }
@@ -49,6 +50,7 @@
         "data": {
           "entity_id": "Entity to watch",
           "led": "LED number (first pixel = 0)",
+          "led_count": "Number of LEDs (block size)",
           "color": "Alert color",
           "alert_states": "Trigger states (pick or type your own)"
         }

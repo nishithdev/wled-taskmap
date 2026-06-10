@@ -20,6 +20,7 @@ from .const import (
     CONF_ENTITY_ID,
     CONF_HOST,
     CONF_LED,
+    CONF_LED_COUNT,
     CONF_MAPPINGS,
     CONF_SEGMENT,
     DEFAULT_ALERT_STATES,
@@ -96,22 +97,31 @@ class TaskMapManager:
         for entity_id in self._by_entity:
             self.refresh_entity(entity_id)
 
+    @staticmethod
+    def _mapping_leds(mapping: dict) -> range:
+        start = int(mapping[CONF_LED])
+        count = max(1, int(mapping.get(CONF_LED_COUNT, 1)))
+        return range(start, start + count)
+
     @property
     def active_alerts(self) -> dict[int, str]:
         """Return led -> color for everything currently alerting."""
         leds: dict[int, str] = {}
         for entity_id, alerting in self.entity_alerts.items():
             mapping = self._by_entity.get(entity_id)
-            if mapping is None:
+            if mapping is None or not alerting:
                 continue
-            if alerting:
-                leds[int(mapping[CONF_LED])] = mapping.get(CONF_COLOR, DEFAULT_COLOR)
+            color = mapping.get(CONF_COLOR, DEFAULT_COLOR)
+            for led in self._mapping_leds(mapping):
+                leds[led] = color
         leds.update(self.manual_alerts)
         return leds
 
     @property
     def all_leds(self) -> set[int]:
-        leds = {int(m[CONF_LED]) for m in self.mappings}
+        leds: set[int] = set()
+        for m in self.mappings:
+            leds.update(self._mapping_leds(m))
         leds.update(self.manual_alerts)
         return leds
 

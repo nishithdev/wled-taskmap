@@ -21,6 +21,7 @@ from .const import (
     CONF_ENTITY_ID,
     CONF_HOST,
     CONF_LED,
+    CONF_LED_COUNT,
     CONF_MAPPINGS,
     CONF_SEGMENT,
     DEFAULT_ALERT_STATES,
@@ -56,7 +57,10 @@ def _rgb_to_hex(rgb: list[int] | tuple[int, ...]) -> str:
 
 
 def _mapping_label(m: dict) -> str:
-    return f"LED {m[CONF_LED]}: {m[CONF_ENTITY_ID]}"
+    start = int(m[CONF_LED])
+    count = max(1, int(m.get(CONF_LED_COUNT, 1)))
+    leds = f"LED {start}" if count == 1 else f"LEDs {start}-{start + count - 1}"
+    return f"{leds}: {m[CONF_ENTITY_ID]}"
 
 
 def _mapping_schema(mapping: dict | None = None) -> vol.Schema:
@@ -73,6 +77,11 @@ def _mapping_schema(mapping: dict | None = None) -> vol.Schema:
             ): selector.EntitySelector(),
             vol.Required(CONF_LED, default=m.get(CONF_LED, 0)): selector.NumberSelector(
                 selector.NumberSelectorConfig(min=0, max=1024, mode="box")
+            ),
+            vol.Required(
+                CONF_LED_COUNT, default=m.get(CONF_LED_COUNT, 1)
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(min=1, max=1024, mode="box")
             ),
             vol.Required(
                 CONF_COLOR, default=_hex_to_rgb(m.get(CONF_COLOR, DEFAULT_COLOR))
@@ -95,6 +104,7 @@ def _mapping_from_input(user_input: dict[str, Any]) -> dict:
     return {
         CONF_ENTITY_ID: user_input[CONF_ENTITY_ID],
         CONF_LED: int(user_input[CONF_LED]),
+        CONF_LED_COUNT: int(user_input[CONF_LED_COUNT]),
         CONF_COLOR: _rgb_to_hex(user_input[CONF_COLOR]),
         CONF_ALERT_STATES: ",".join(user_input[CONF_ALERT_STATES]),
     }

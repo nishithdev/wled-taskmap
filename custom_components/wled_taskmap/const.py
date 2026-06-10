@@ -9,6 +9,7 @@ CONF_MAPPINGS = "mappings"
 # Per-mapping keys
 CONF_ENTITY_ID = "entity_id"
 CONF_LED = "led"
+CONF_LED_COUNT = "led_count"
 CONF_COLOR = "color"
 CONF_ALERT_STATES = "alert_states"
 

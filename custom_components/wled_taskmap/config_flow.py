@@ -29,6 +29,76 @@ from .const import (
     DOMAIN,
 )
 
+COMMON_ALERT_STATES = [
+    "unavailable",
+    "unknown",
+    "error",
+    "problem",
+    "on",
+    "off",
+    "open",
+    "disconnected",
+    "failed",
+    "idle",
+]
+
+
+def _hex_to_rgb(value: str) -> list[int]:
+    value = value.lstrip("#")
+    try:
+        return [int(value[0:2], 16), int(value[2:4], 16), int(value[4:6], 16)]
+    except (ValueError, IndexError):
+        return [255, 0, 0]
+
+
+def _rgb_to_hex(rgb: list[int] | tuple[int, ...]) -> str:
+    return "".join(f"{int(c):02X}" for c in rgb[:3])
+
+
+def _mapping_label(m: dict) -> str:
+    return f"LED {m[CONF_LED]}: {m[CONF_ENTITY_ID]}"
+
+
+def _mapping_schema(mapping: dict | None = None) -> vol.Schema:
+    m = mapping or {}
+    states_default = [
+        s.strip()
+        for s in m.get(CONF_ALERT_STATES, DEFAULT_ALERT_STATES).split(",")
+        if s.strip()
+    ]
+    return vol.Schema(
+        {
+            vol.Required(
+                CONF_ENTITY_ID, default=m.get(CONF_ENTITY_ID, vol.UNDEFINED)
+            ): selector.EntitySelector(),
+            vol.Required(CONF_LED, default=m.get(CONF_LED, 0)): selector.NumberSelector(
+                selector.NumberSelectorConfig(min=0, max=1024, mode="box")
+            ),
+            vol.Required(
+                CONF_COLOR, default=_hex_to_rgb(m.get(CONF_COLOR, DEFAULT_COLOR))
+            ): selector.ColorRGBSelector(),
+            vol.Required(
+                CONF_ALERT_STATES, default=states_default
+            ): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=COMMON_ALERT_STATES,
+                    multiple=True,
+                    custom_value=True,
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                )
+            ),
+        }
+    )
+
+
+def _mapping_from_input(user_input: dict[str, Any]) -> dict:
+    return {
+        CONF_ENTITY_ID: user_input[CONF_ENTITY_ID],
+        CONF_LED: int(user_input[CONF_LED]),
+        CONF_COLOR: _rgb_to_hex(user_input[CONF_COLOR]),
+        CONF_ALERT_STATES: ",".join(user_input[CONF_ALERT_STATES]),
+    }
+
 
 class WledTaskMapConfigFlow(ConfigFlow, domain=DOMAIN):
     """Initial setup: point at a WLED device."""
@@ -78,62 +148,76 @@ class WledTaskMapConfigFlow(ConfigFlow, domain=DOMAIN):
 class WledTaskMapOptionsFlow(OptionsFlow):
     """Manage entity -> LED mappings."""
 
+    _edit_index: int | None = None
+
+    @property
+    def _mappings(self) -> list[dict]:
+        return list(self.config_entry.options.get(CONF_MAPPINGS, []))
+
+    def _save(self, mappings: list[dict]) -> ConfigFlowResult:
+        return self.async_create_entry(
+            title="", data={**self.config_entry.options, CONF_MAPPINGS: mappings}
+        )
+
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        return self.async_show_menu(
-            step_id="init", menu_options=["add_mapping", "remove_mapping"]
-        )
+        menu = ["add_mapping"]
+        if self._mappings:
+            menu += ["edit_select", "remove_mapping"]
+        return self.async_show_menu(step_id="init", menu_options=menu)
 
     async def async_step_add_mapping(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         if user_input is not None:
-            mappings = list(self.config_entry.options.get(CONF_MAPPINGS, []))
-            mappings.append(
-                {
-                    CONF_ENTITY_ID: user_input[CONF_ENTITY_ID],
-                    CONF_LED: int(user_input[CONF_LED]),
-                    CONF_COLOR: user_input[CONF_COLOR].lstrip("#"),
-                    CONF_ALERT_STATES: user_input[CONF_ALERT_STATES],
-                }
-            )
-            return self.async_create_entry(
-                title="",
-                data={**self.config_entry.options, CONF_MAPPINGS: mappings},
-            )
+            mappings = self._mappings
+            mappings.append(_mapping_from_input(user_input))
+            return self._save(mappings)
         return self.async_show_form(
-            step_id="add_mapping",
+            step_id="add_mapping", data_schema=_mapping_schema()
+        )
+
+    async def async_step_edit_select(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        labels = [_mapping_label(m) for m in self._mappings]
+        if user_input is not None:
+            self._edit_index = labels.index(user_input["mapping"])
+            return await self.async_step_edit_mapping()
+        return self.async_show_form(
+            step_id="edit_select",
             data_schema=vol.Schema(
                 {
-                    vol.Required(CONF_ENTITY_ID): selector.EntitySelector(),
-                    vol.Required(CONF_LED, default=0): selector.NumberSelector(
-                        selector.NumberSelectorConfig(min=0, max=1024, mode="box")
-                    ),
-                    vol.Required(CONF_COLOR, default=DEFAULT_COLOR): str,
-                    vol.Required(
-                        CONF_ALERT_STATES, default=DEFAULT_ALERT_STATES
-                    ): str,
+                    vol.Required("mapping"): selector.SelectSelector(
+                        selector.SelectSelectorConfig(options=labels)
+                    )
                 }
             ),
+        )
+
+    async def async_step_edit_mapping(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        mappings = self._mappings
+        if user_input is not None and self._edit_index is not None:
+            mappings[self._edit_index] = _mapping_from_input(user_input)
+            return self._save(mappings)
+        return self.async_show_form(
+            step_id="edit_mapping",
+            data_schema=_mapping_schema(mappings[self._edit_index]),
         )
 
     async def async_step_remove_mapping(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        mappings = list(self.config_entry.options.get(CONF_MAPPINGS, []))
+        mappings = self._mappings
         if user_input is not None:
             keep = [
-                m
-                for m in mappings
-                if f"{m[CONF_ENTITY_ID]} → LED {m[CONF_LED]}"
-                not in user_input["remove"]
+                m for m in mappings if _mapping_label(m) not in user_input["remove"]
             ]
-            return self.async_create_entry(
-                title="",
-                data={**self.config_entry.options, CONF_MAPPINGS: keep},
-            )
-        labels = [f"{m[CONF_ENTITY_ID]} → LED {m[CONF_LED]}" for m in mappings]
+            return self._save(keep)
+        labels = [_mapping_label(m) for m in mappings]
         return self.async_show_form(
             step_id="remove_mapping",
             data_schema=vol.Schema(

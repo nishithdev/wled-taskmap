@@ -3,6 +3,7 @@
     "step": {
       "user": {
         "title": "Connect to WLED",
+        "description": "Enter the IP address of your WLED device (find it in the WLED app or your router). Leave segment at 0 unless you've split your strip into segments.",
         "data": {
           "host": "WLED IP address or hostname",
           "segment": "WLED segment ID"
@@ -21,24 +22,41 @@
       "init": {
         "title": "WLED Task Map",
         "menu_options": {
-          "add_mapping": "Add an entity → LED mapping",
-          "remove_mapping": "Remove mappings"
+          "add_mapping": "➕ Add alert (entity → LED)",
+          "edit_select": "✏️ Edit an alert",
+          "remove_mapping": "🗑 Remove alerts"
         }
       },
       "add_mapping": {
-        "title": "Map an entity to an LED",
+        "title": "Add alert",
+        "description": "When the entity enters one of the trigger states, its LED lights in the chosen color. To-do lists trigger automatically whenever they have pending items — no states needed.",
         "data": {
           "entity_id": "Entity to watch",
-          "led": "LED index (0-based)",
-          "color": "Alert color (hex, e.g. FF0000)",
-          "alert_states": "States that trigger the alert (comma-separated)"
-        },
-        "description": "To-do list entities alert automatically when they have pending items. For problem binary sensors, add 'on' to the alert states."
+          "led": "LED number (first pixel = 0)",
+          "color": "Alert color",
+          "alert_states": "Trigger states (pick or type your own)"
+        }
+      },
+      "edit_select": {
+        "title": "Edit an alert",
+        "data": {
+          "mapping": "Which alert?"
+        }
+      },
+      "edit_mapping": {
+        "title": "Edit alert",
+        "description": "Change anything and save.",
+        "data": {
+          "entity_id": "Entity to watch",
+          "led": "LED number (first pixel = 0)",
+          "color": "Alert color",
+          "alert_states": "Trigger states (pick or type your own)"
+        }
       },
       "remove_mapping": {
-        "title": "Remove mappings",
+        "title": "Remove alerts",
         "data": {
-          "remove": "Mappings to remove"
+          "remove": "Alerts to remove"
         }
       }
     }

@@ -23,16 +23,16 @@
     <circle cx="175" cy="80" r="8" fill="#48484a"/>
     <circle cx="195" cy="80" r="8" fill="#48484a"/>
     <!-- battery zone: gradient fill, 7 of 10 lit (74%) red -> green through hue wheel -->
-    <circle cx="240" cy="80" r="8" fill="#FF0000"/>
-    <circle cx="260" cy="80" r="8" fill="#FF3900"/>
-    <circle cx="280" cy="80" r="8" fill="#FF7200"/>
-    <circle cx="300" cy="80" r="8" fill="#FFAA00"/>
-    <circle cx="320" cy="80" r="8" fill="#FFE300"/>
-    <circle cx="340" cy="80" r="8" fill="#E3FF00"/>
-    <circle cx="360" cy="80" r="8" fill="#AAFF00"/>
-    <circle cx="380" cy="80" r="8" fill="#48484a"/>
-    <circle cx="400" cy="80" r="8" fill="#48484a"/>
-    <circle cx="414" cy="80" r="8" fill="#48484a"/>
+    <circle cx="232" cy="80" r="8" fill="#FF0000"/>
+    <circle cx="252" cy="80" r="8" fill="#FF3900"/>
+    <circle cx="272" cy="80" r="8" fill="#FF7200"/>
+    <circle cx="292" cy="80" r="8" fill="#FFAA00"/>
+    <circle cx="312" cy="80" r="8" fill="#FFE300"/>
+    <circle cx="332" cy="80" r="8" fill="#E3FF00"/>
+    <circle cx="352" cy="80" r="8" fill="#AAFF00"/>
+    <circle cx="372" cy="80" r="8" fill="#48484a"/>
+    <circle cx="392" cy="80" r="8" fill="#48484a"/>
+    <circle cx="412" cy="80" r="8" fill="#48484a"/>
     <!-- printer zone: blue fill bar, 5 of 9 lit -->
     <circle cx="445" cy="80" r="8" fill="#0a84ff"/>
     <circle cx="465" cy="80" r="8" fill="#0a84ff"/>

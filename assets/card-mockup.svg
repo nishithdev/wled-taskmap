@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 460 330" font-family="-apple-system,Segoe UI,Roboto,sans-serif">
+  <defs>
+    <filter id="glow"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <!-- card -->
+  <rect x="4" y="4" width="452" height="322" rx="14" fill="#1c1c1e" stroke="#3a3a3c"/>
+  <text x="24" y="38" fill="#fff" font-size="17" font-weight="600">LED Alerts</text>
+  <text x="24" y="58" fill="#98989d" font-size="11">192.168.1.50 · 30 LEDs</text>
+
+  <!-- strip -->
+  <rect x="20" y="70" width="420" height="64" rx="10" fill="#2c2c2e"/>
+  <g>
+    <!-- row 1 -->
+    <circle cx="44" cy="92" r="8" fill="#48484a"/><circle cx="70" cy="92" r="8" fill="#48484a"/>
+    <circle cx="96" cy="92" r="8" fill="#ff3b30" filter="url(#glow)"/>
+    <circle cx="122" cy="92" r="8" fill="#ff3b30" filter="url(#glow)"/>
+    <circle cx="148" cy="92" r="8" fill="#ff3b30" filter="url(#glow)"/>
+    <circle cx="174" cy="92" r="8" fill="#48484a"/><circle cx="200" cy="92" r="8" fill="#48484a"/>
+    <circle cx="226" cy="92" r="8" fill="#48484a"/><circle cx="252" cy="92" r="8" fill="#48484a"/>
+    <circle cx="278" cy="92" r="8" fill="#34c759" filter="url(#glow)"/>
+    <circle cx="304" cy="92" r="8" fill="#34c759" filter="url(#glow)"/>
+    <circle cx="330" cy="92" r="8" fill="#48484a"/><circle cx="356" cy="92" r="8" fill="#48484a"/>
+    <circle cx="382" cy="92" r="8" fill="#48484a"/><circle cx="408" cy="92" r="8" fill="#48484a"/>
+    <!-- row 2 -->
+    <circle cx="44" cy="116" r="8" fill="#48484a"/><circle cx="70" cy="116" r="8" fill="#48484a"/>
+    <circle cx="96" cy="116" r="8" fill="#48484a"/><circle cx="122" cy="116" r="8" fill="#48484a"/>
+    <circle cx="148" cy="116" r="8" fill="#48484a"/>
+    <circle cx="174" cy="116" r="8" fill="#ff9f0a" filter="url(#glow)"/>
+    <circle cx="200" cy="116" r="8" fill="#48484a"/><circle cx="226" cy="116" r="8" fill="#48484a"/>
+    <circle cx="252" cy="116" r="8" fill="#48484a"/><circle cx="278" cy="116" r="8" fill="#48484a"/>
+    <circle cx="304" cy="116" r="8" fill="#48484a"/><circle cx="330" cy="116" r="8" fill="#48484a"/>
+    <circle cx="356" cy="116" r="8" fill="#48484a"/><circle cx="382" cy="116" r="8" fill="#48484a"/>
+    <circle cx="408" cy="116" r="8" fill="#48484a"/>
+  </g>
+
+  <!-- rules -->
+  <g font-size="12.5">
+    <circle cx="32" cy="162" r="7" fill="#ff3b30"/>
+    <text x="48" y="166" fill="#fff"><tspan font-weight="600">3D Printer</tspan> is error / unavailable → LED 2, 3, 4</text>
+    <text x="404" y="166" font-size="13">✏️</text><text x="426" y="166" font-size="13">🗑</text>
+    <line x1="24" y1="180" x2="436" y2="180" stroke="#3a3a3c"/>
+
+    <circle cx="32" cy="200" r="7" fill="#34c759"/>
+    <text x="48" y="204" fill="#fff"><tspan font-weight="600">Shopping List</tspan> has pending items → LED 9, 10</text>
+    <text x="404" y="204" font-size="13">✏️</text><text x="426" y="204" font-size="13">🗑</text>
+    <line x1="24" y1="218" x2="436" y2="218" stroke="#3a3a3c"/>
+
+    <circle cx="32" cy="238" r="7" fill="#ff9f0a"/>
+    <text x="48" y="242" fill="#fff"><tspan font-weight="600">Backup</tspan> is failed → LED 20</text>
+    <text x="404" y="242" font-size="13">✏️</text><text x="426" y="242" font-size="13">🗑</text>
+  </g>
+
+  <!-- add button -->
+  <rect x="24" y="270" width="110" height="34" rx="9" fill="#0a84ff"/>
+  <text x="79" y="292" fill="#fff" font-size="13" text-anchor="middle">＋ Add alert</text>
+</svg>

@@ -1,4 +1,6 @@
-# WLED Task Map
+<p align="center"><img src="assets/logo.png" width="360" alt="WLED Task Map"></p>
+
+<h1 align="center">WLED Task Map</h1>
 
 Light up LEDs on your WLED strip when something needs your attention.
 
@@ -9,6 +11,10 @@ Examples of what it can do:
 - LED 10 turns **orange** when a backup fails
 
 You set all of this up by **tapping LEDs and picking colors in a visual card** — no YAML, no code.
+
+<p align="center"><img src="assets/card-mockup.svg" width="460" alt="The WLED Task Map card"></p>
+
+Full reference (services, websocket API, troubleshooting): **[docs/documentation.md](docs/documentation.md)**
 
 ![What you need](https://img.shields.io/badge/Home%20Assistant-2024.6%2B-blue) ![HACS](https://img.shields.io/badge/HACS-custom%20repository-orange)
 

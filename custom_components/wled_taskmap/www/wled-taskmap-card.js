@@ -80,6 +80,10 @@ class WledTaskmapCard extends HTMLElement {
         color: r.color.replace("#", "").toUpperCase(),
         alert_states: r.alert_states,
         effect: r.effect || "solid",
+        for_minutes: r.for_minutes || 0,
+        fill_min: r.fill_min ?? 0,
+        fill_max: r.fill_max ?? 100,
+        color2: r.color2 || "",
       })),
     });
   }
@@ -239,10 +243,25 @@ class WledTaskmapCard extends HTMLElement {
     return this._form.color;
   }
 
+  static _ruleColorAt(rule, i) {
+    const block = [...rule.leds].sort((a, b) => a - b);
+    const pos = block.indexOf(i), n = block.length;
+    const t = n > 1 ? pos / (n - 1) : 0;
+    if (rule.color2 === "RAINBOW") return WledTaskmapCard._hsv2hex(0.75 * t, 1, 1);
+    if (rule.color2) {
+      const [h1, s1, v1] = WledTaskmapCard._hex2hsv("#" + rule.color);
+      const [h2, s2, v2] = WledTaskmapCard._hex2hsv("#" + rule.color2);
+      let dh = h2 - h1;
+      if (dh > 0.5) dh -= 1; else if (dh < -0.5) dh += 1;
+      return WledTaskmapCard._hsv2hex(((h1 + dh * t) % 1 + 1) % 1, s1 + (s2 - s1) * t, v1 + (v2 - v1) * t);
+    }
+    return "#" + rule.color;
+  }
+
   _ledColor(i) {
     if (this._selected.has(i)) return null; // selection style wins
     for (let r = this._rules.length - 1; r >= 0; r--) {
-      if (this._rules[r].leds.includes(i)) return "#" + this._rules[r].color;
+      if (this._rules[r].leds.includes(i)) return WledTaskmapCard._ruleColorAt(this._rules[r], i);
     }
     return null;
   }

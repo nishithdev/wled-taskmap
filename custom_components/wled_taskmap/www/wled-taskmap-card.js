@@ -3,6 +3,32 @@
 
 const SUGGESTED_STATES = ["unavailable", "unknown", "error", "problem", "on", "off", "open", "failed", "idle"];
 
+// Known possible states per domain (besides unavailable/unknown, which always apply)
+const DOMAIN_STATES = {
+  light: ["on", "off"],
+  switch: ["on", "off"],
+  binary_sensor: ["on", "off"],
+  input_boolean: ["on", "off"],
+  automation: ["on", "off"],
+  script: ["on", "off"],
+  fan: ["on", "off"],
+  cover: ["open", "closed", "opening", "closing"],
+  lock: ["locked", "unlocked", "locking", "unlocking", "jammed"],
+  person: ["home", "not_home"],
+  device_tracker: ["home", "not_home"],
+  sun: ["above_horizon", "below_horizon"],
+  media_player: ["playing", "paused", "idle", "off", "on", "standby", "buffering"],
+  vacuum: ["cleaning", "docked", "paused", "idle", "returning", "error"],
+  climate: ["off", "heat", "cool", "heat_cool", "auto", "dry", "fan_only"],
+  timer: ["idle", "active", "paused"],
+  update: ["on", "off"],
+  alarm_control_panel: ["disarmed", "armed_home", "armed_away", "armed_night", "pending", "triggered"],
+  water_heater: ["off", "eco", "electric", "performance", "high_demand", "heat_pump", "gas"],
+  calendar: ["on", "off"],
+  weather: ["clear-night", "cloudy", "fog", "hail", "lightning", "partlycloudy", "pouring", "rainy", "snowy", "sunny", "windy"],
+  printer: ["idle", "printing", "error"],
+};
+
 class WledTaskmapCard extends HTMLElement {
   constructor() {
     super();
@@ -116,9 +142,22 @@ class WledTaskmapCard extends HTMLElement {
 
   _entityStateSuggestions() {
     const entity = this._form.entity.trim();
-    const set = new Set(SUGGESTED_STATES);
     const st = this._hass.states[entity];
-    if (st) set.add(st.state);
+    const set = new Set();
+    if (st) {
+      // Entity-specific possible states, most relevant first
+      const domain = entity.split(".")[0];
+      const attrs = st.attributes || {};
+      // Enum sensors / select / input_select expose their full option list
+      (attrs.options || []).forEach((o) => set.add(String(o)));
+      if (domain === "climate") (attrs.hvac_modes || []).forEach((m) => set.add(String(m)));
+      (DOMAIN_STATES[domain] || []).forEach((s) => set.add(s));
+      set.add(st.state); // whatever it reports right now
+      set.add("unavailable");
+      set.add("unknown");
+    } else {
+      SUGGESTED_STATES.forEach((s) => set.add(s));
+    }
     this._form.states.forEach((s) => set.add(s));
     return [...set];
   }

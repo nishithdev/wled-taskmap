@@ -156,6 +156,8 @@ class TaskMapManager:
         self._unsub_registry = None
         # rule idx -> cancel callback for a pending "for N minutes" timer
         self._pending: dict[int, callback] = {}
+        # rule idx -> last alert state written to the logbook
+        self._last_logged: dict[int, bool] = {}
         self._lock = asyncio.Lock()
 
     # ---------- quiet hours ----------
@@ -338,6 +340,7 @@ class TaskMapManager:
 
     async def push(self) -> None:
         """Reconcile the strip with the current alert state."""
+        self._log_alert_changes()
         async with self._lock:
             active = self.active_alerts
             quiet = self._in_quiet()
@@ -438,6 +441,42 @@ class TaskMapManager:
             self._unsub_blink()
             self._unsub_blink = None
             self._phase = True
+
+    # ---------- logbook ----------
+
+    def _log_alert_changes(self) -> None:
+        """Write a logbook entry whenever a rule starts or stops alerting."""
+        try:
+            from homeassistant.components.logbook import async_log_entry
+        except ImportError:
+            return
+        if "logbook" not in self.hass.config.components:
+            return
+        for idx, rule in enumerate(self.rules):
+            now = bool(self.rule_alerts.get(idx))
+            before = self._last_logged.get(idx)
+            if before is None or before == now:
+                self._last_logged[idx] = now
+                continue
+            self._last_logged[idx] = now
+            entity_id = rule[CONF_ENTITY_ID]
+            state = self.hass.states.get(entity_id)
+            name = (
+                state.attributes.get("friendly_name") if state else None
+            ) or entity_id
+            leds = rule[CONF_LEDS]
+            leds_txt = (
+                f"LED {leds[0]}" if len(leds) == 1 else f"LEDs {leds[0]}-{leds[-1]}"
+            )
+            if now:
+                message = (
+                    f"lit {leds_txt} ({state.state if state else 'unknown'})"
+                )
+            else:
+                message = f"cleared {leds_txt}"
+            async_log_entry(
+                self.hass, name, message, DOMAIN, entity_id
+            )
 
     # ---------- repairs & renames ----------
 

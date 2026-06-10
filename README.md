@@ -12,7 +12,7 @@ Examples of what it can do:
 
 You set all of this up by **tapping LEDs and picking colors in a visual card** — no YAML, no code.
 
-<p align="center"><img src="assets/card-mockup.svg" width="460" alt="The WLED Task Map card"></p>
+<p align="center"><img src="assets/demo.gif" width="560" alt="30-second demo: tap LEDs, pick an entity and states, choose a color — done"></p>
 
 Full reference (services, websocket API, troubleshooting): **[docs/documentation.md](docs/documentation.md)**
 

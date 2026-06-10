@@ -97,6 +97,10 @@ Each rule has an optional delay: the condition must hold continuously for N minu
 - If a watched entity is **renamed**, rules update automatically — nothing breaks.
 - If a watched entity is **deleted**, a warning appears in Settings → Repairs pointing at the dead rule so you can edit or remove it in the card.
 
+## Alert history (Logbook)
+
+Every alert fire and clear is written to the Home Assistant Logbook: *"3D Printer lit LEDs 3-5 (error)"*, *"3D Printer cleared LEDs 3-5"*. To answer "what lit LED 5 last night?", open **Logbook** and filter by the watched entity — or look at the entity's history directly. Entries appear under the watched entity, so they also show in its more-info dialog.
+
 ## Locating LEDs
 
 Tap 🔦 on any rule to flash its LEDs three times on the physical strip. Tap a rule's text to open the watched entity's more-info dialog.

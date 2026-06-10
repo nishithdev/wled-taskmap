@@ -92,7 +92,7 @@ Tap ✏️ to change anything, 🗑 to remove.
 
 A single 30-LED shelf strip can act as a whole-house dashboard by giving each topic its own block of LEDs:
 
-<p align="center"><img src="assets/zones-example.svg" width="640" alt="One strip split into network, phone battery, and printer zones"></p>
+<p align="center"><img src="assets/zones-example.svg?v=2" width="640" alt="One strip split into network, phone battery, and printer zones"></p>
 
 | Zone | LEDs | Alert | Color / effect |
 |---|---|---|---|

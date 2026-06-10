@@ -221,7 +221,13 @@ class WledTaskmapCard extends HTMLElement {
     }
     const n = this._entry.led_count || 30;
     const isFill = this._form.effect === "fill";
-    const editingTodo = !isFill && this._form.entity.trim().startsWith("todo.");
+    const entId = this._form.entity.trim();
+    const editingTodo = !isFill && entId.startsWith("todo.");
+    const entState = this._hass.states[entId];
+    // Numeric sensor (battery %, temperature...) without a fixed option list
+    const isNumeric = !isFill && !editingTodo && !!entState
+      && !(entState.attributes || {}).options
+      && entState.state !== "" && !isNaN(parseFloat(entState.state)) && isFinite(entState.state);
 
     const leds = Array.from({ length: n }, (_, i) => {
       const ruleColor = this._ledColor(i);
@@ -276,6 +282,22 @@ class WledTaskmapCard extends HTMLElement {
              <div class="hint">Progress bar: at the first value no LEDs are lit, at the second all selected LEDs are. E.g. 0 to 100 for a print-progress sensor.</div>`
           : editingTodo
           ? `<div class="hint">To-do list: lights up whenever it has pending items.</div>`
+          : isNumeric
+          ? `<div class="step"><span class="num">3</span> …when its value is</div>
+             <div class="chips">
+               <select class="cmpop">
+                 <option value="<">below</option><option value=">">above</option>
+                 <option value="<=">at most</option><option value=">=">at least</option>
+                 <option value="=">exactly</option><option value="!=">not</option>
+               </select>
+               <input type="number" class="cmpval" placeholder="${entState.state}" style="width:80px">
+               <button class="chip addcmp">add</button>
+               ${["unavailable","unknown"].map((s) =>
+                 `<button class="chip ${this._form.states.has(s) ? "on" : ""}" data-state="${s}">${s}</button>`).join("")}
+             </div>
+             <div class="chips" style="margin-top:6px">${[...this._form.states].filter((s)=>!["unavailable","unknown"].includes(s)).map((s) =>
+               `<button class="chip on" data-state="${s}">${s} ✕</button>`).join("")}</div>
+             <div class="hint">Current value: <b>${entState.state}</b>${entState.attributes.unit_of_measurement ? " " + entState.attributes.unit_of_measurement : ""}. E.g. battery: choose “below 20” to alert when low. Tip: the <b>fill</b> effect below shows the value as a bar instead.</div>`
           : `<div class="step"><span class="num">3</span> …is in one of these states</div><div class="chips">${stateChips}
              <input class="newstate" placeholder="other…" size="8"></div>
              <div class="hint">Number sensor? Type a comparison instead, e.g. <b>&gt;80</b> or <b>&lt;20</b></div>`}
@@ -316,6 +338,8 @@ class WledTaskmapCard extends HTMLElement {
         .chip{border:1px solid var(--divider-color);background:var(--card-background-color);color:var(--primary-text-color);border-radius:14px;padding:4px 10px;cursor:pointer;font-size:.85em}
         .chip.on{background:var(--primary-color);color:#fff;border-color:var(--primary-color)}
         .newstate{border:1px dashed var(--divider-color);background:none;border-radius:14px;padding:4px 10px;color:var(--primary-text-color);font-size:.85em}
+        .cmpop,.cmpval{background:var(--card-background-color);color:var(--primary-text-color);border:1px solid var(--divider-color);border-radius:6px;padding:5px 6px;font-size:.9em}
+        .addcmp{border-style:dashed}
         .color{margin-left:8px;width:48px;height:28px;border:none;background:none;cursor:pointer;vertical-align:middle}
         .actions{margin-top:12px;display:flex;gap:8px}
         button.primary{background:var(--primary-color);color:#fff;border:none;border-radius:8px;padding:8px 16px;cursor:pointer;font-size:.95em}
@@ -411,6 +435,14 @@ class WledTaskmapCard extends HTMLElement {
         this._form.states.has(s) ? this._form.states.delete(s) : this._form.states.add(s);
         this._render();
       }));
+    const addcmp = root.querySelector(".addcmp");
+    addcmp?.addEventListener("click", () => {
+      const op = root.querySelector(".cmpop").value;
+      const val = root.querySelector(".cmpval").value.trim();
+      if (val === "" || isNaN(parseFloat(val))) return this._flash("Enter a number first");
+      this._form.states.add(op + val);
+      this._render();
+    });
     const ns = root.querySelector(".newstate");
     ns?.addEventListener("keydown", (e) => {
       if (e.key === "Enter" && ns.value.trim()) { this._form.states.add(ns.value.trim()); this._render(); }

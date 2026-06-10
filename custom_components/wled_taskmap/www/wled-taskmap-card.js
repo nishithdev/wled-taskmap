@@ -37,7 +37,8 @@ class WledTaskmapCard extends HTMLElement {
     this._rules = [];
     this._editing = null; // index being edited, or null
     this._formOpen = false;
-    this._form = { entity: "", states: new Set(), color: "#FF0000" };
+    this._form = { entity: "", states: new Set(), color: "#FF0000", effect: "solid" };
+    this._quiet = { start: "", end: "", mode: "off" };
     this._dragging = false;
     this._dragMode = true;
     this._loaded = false;
@@ -59,7 +60,10 @@ class WledTaskmapCard extends HTMLElement {
       this._entry = this._config.entry_id
         ? entries.find((e) => e.entry_id === this._config.entry_id)
         : entries[0];
-      if (this._entry) this._rules = JSON.parse(JSON.stringify(this._entry.rules || []));
+      if (this._entry) {
+        this._rules = JSON.parse(JSON.stringify(this._entry.rules || []));
+        this._quiet = Object.assign({ start: "", end: "", mode: "off" }, this._entry.quiet || {});
+      }
       this._render();
     } catch (e) {
       this.shadowRoot.innerHTML = `<ha-card><div style="padding:16px">WLED Task Map: ${e.message || e}</div></ha-card>`;
@@ -75,8 +79,36 @@ class WledTaskmapCard extends HTMLElement {
         leds: r.leds,
         color: r.color.replace("#", "").toUpperCase(),
         alert_states: r.alert_states,
+        effect: r.effect || "solid",
       })),
     });
+  }
+
+  async _saveQuiet() {
+    await this._hass.callWS({
+      type: "wled_taskmap/save_settings",
+      entry_id: this._entry.entry_id,
+      quiet_start: this._quiet.start || "",
+      quiet_end: this._quiet.end || "",
+      quiet_mode: this._quiet.mode || "off",
+    });
+  }
+
+  async _testRule(i) {
+    const r = this._rules[i];
+    await this._hass.callWS({
+      type: "wled_taskmap/test_rule",
+      entry_id: this._entry.entry_id,
+      leds: r.leds,
+      color: r.color,
+    });
+  }
+
+  _moreInfo(entityId) {
+    const ev = new CustomEvent("hass-more-info", {
+      bubbles: true, composed: true, detail: { entityId },
+    });
+    this.dispatchEvent(ev);
   }
 
   // ---------- interactions ----------
@@ -96,9 +128,10 @@ class WledTaskmapCard extends HTMLElement {
         entity: r.entity_id,
         states: new Set(r.alert_states.split(",").map((s) => s.trim()).filter(Boolean)),
         color: "#" + r.color.replace("#", ""),
+        effect: r.effect || "solid",
       };
     } else {
-      this._form = { entity: "", states: new Set(["unavailable", "error"]), color: "#FF0000" };
+      this._form = { entity: "", states: new Set(["unavailable", "error"]), color: "#FF0000", effect: "solid" };
     }
     this._render();
   }
@@ -122,6 +155,7 @@ class WledTaskmapCard extends HTMLElement {
       leds,
       color: this._form.color.replace("#", "").toUpperCase(),
       alert_states: [...this._form.states].join(","),
+      effect: this._form.effect || "solid",
     };
     if (this._editing !== null) this._rules[this._editing] = rule;
     else this._rules.push(rule);
@@ -198,9 +232,11 @@ class WledTaskmapCard extends HTMLElement {
         ? "has pending items"
         : `is ${r.alert_states.split(",").join(" / ")}`;
       const ledsTxt = r.leds.length > 6 ? `${r.leds.length} LEDs` : `LED ${r.leds.join(", ")}`;
+      const fx = r.effect === "blink" ? " · ⚡ blink" : r.effect === "pulse" ? " · 〰 pulse" : "";
       return `<div class="rule">
         <span class="dot" style="background:#${r.color}"></span>
-        <span class="rtext"><b>${name}</b> ${when} → ${ledsTxt}</span>
+        <span class="rtext" data-info="${r.entity_id}" title="Show entity details"><b>${name}</b> ${when} → ${ledsTxt}${fx}</span>
+        <button class="icon" data-test="${i}" title="Flash these LEDs on the strip">🔦</button>
         <button class="icon" data-edit="${i}" title="Edit">✏️</button>
         <button class="icon" data-del="${i}" title="Delete">🗑</button>
       </div>`;
@@ -225,9 +261,14 @@ class WledTaskmapCard extends HTMLElement {
         ${editingTodo
           ? `<div class="hint">To-do list: lights up whenever it has pending items.</div>`
           : `<div class="step"><span class="num">3</span> …is in one of these states</div><div class="chips">${stateChips}
-             <input class="newstate" placeholder="other…" size="8"></div>`}
+             <input class="newstate" placeholder="other…" size="8"></div>
+             <div class="hint">Number sensor? Type a comparison instead, e.g. <b>&gt;80</b> or <b>&lt;20</b></div>`}
         <div class="step"><span class="num">${editingTodo ? 3 : 4}</span> Light them in this color
-          <input type="color" class="color" value="${this._form.color}"></div>
+          <input type="color" class="color" value="${this._form.color}">
+          <span class="chips" style="display:inline-flex;margin-left:10px">
+            ${["solid","blink","pulse"].map((e) =>
+              `<button class="chip ${this._form.effect === e ? "on" : ""}" data-effect="${e}">${e === "blink" ? "⚡ " : e === "pulse" ? "〰 " : ""}${e}</button>`).join("")}
+          </span></div>
         <div class="actions">
           <button class="primary save">${this._editing !== null ? "Save changes" : "Add alert"}</button>
           <button class="cancel">Cancel</button>
@@ -263,6 +304,10 @@ class WledTaskmapCard extends HTMLElement {
         button.add{margin-top:12px}
         .hint{color:var(--secondary-text-color);font-size:.85em;margin:6px 0}
         .flash{color:var(--error-color);font-size:.85em;margin-top:6px;opacity:0;transition:opacity .3s}
+        .rtext{cursor:pointer}
+        .rtext:hover{text-decoration:underline}
+        .quiet{margin-top:14px;padding-top:10px;border-top:1px solid var(--divider-color);font-size:.88em;color:var(--secondary-text-color);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+        .quiet select,.quiet input{background:var(--card-background-color);color:var(--primary-text-color);border:1px solid var(--divider-color);border-radius:6px;padding:4px 6px}
       </style>
       <ha-card>
         <h2>LED Alerts</h2>
@@ -270,6 +315,18 @@ class WledTaskmapCard extends HTMLElement {
         <div class="strip">${leds}</div>
         <div class="rules">${rules}</div>
         ${form}
+        <div class="quiet">
+          🌙 Quiet hours
+          <select class="qmode">
+            <option value="off" ${this._quiet.mode === "off" ? "selected" : ""}>Off</option>
+            <option value="dim" ${this._quiet.mode === "dim" ? "selected" : ""}>Dim alerts</option>
+            <option value="hide" ${this._quiet.mode === "hide" ? "selected" : ""}>Hide alerts</option>
+          </select>
+          <span class="qtimes" style="${this._quiet.mode === "off" ? "display:none" : ""}">
+            from <input type="time" class="qstart" value="${this._quiet.start}">
+            to <input type="time" class="qend" value="${this._quiet.end}">
+          </span>
+        </div>
         <div class="flash"></div>
       </ha-card>`;
 
@@ -307,6 +364,24 @@ class WledTaskmapCard extends HTMLElement {
       b.addEventListener("click", () => this._openForm(+b.dataset.edit)));
     root.querySelectorAll("[data-del]").forEach((b) =>
       b.addEventListener("click", () => this._deleteRule(+b.dataset.del)));
+    root.querySelectorAll("[data-test]").forEach((b) =>
+      b.addEventListener("click", () => this._testRule(+b.dataset.test)));
+    root.querySelectorAll("[data-info]").forEach((el) =>
+      el.addEventListener("click", () => this._moreInfo(el.dataset.info)));
+    root.querySelectorAll("[data-effect]").forEach((b) =>
+      b.addEventListener("click", () => { this._form.effect = b.dataset.effect; this._render(); }));
+    const qmode = root.querySelector(".qmode");
+    qmode?.addEventListener("change", async () => {
+      this._quiet.mode = qmode.value;
+      await this._saveQuiet(); this._render();
+    });
+    ["qstart", "qend"].forEach((cls) => {
+      const inp = root.querySelector("." + cls);
+      inp?.addEventListener("change", async () => {
+        this._quiet[cls === "qstart" ? "start" : "end"] = inp.value;
+        await this._saveQuiet();
+      });
+    });
     const entity = root.querySelector(".entity");
     entity?.addEventListener("change", () => { this._form.entity = entity.value; this._render(); });
     entity?.addEventListener("input", () => { this._form.entity = entity.value; });

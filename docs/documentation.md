@@ -62,8 +62,25 @@ Rules are stored in the config entry options:
 ## State matching details
 
 - Comparison is against the entity's **state string**, lowercased (`on`, `error`, `below_horizon`…).
-- **To-do lists** (`todo.*`) ignore `alert_states`: they alert whenever the list has at least one pending item (their state is the pending-item count).
+- **Numeric thresholds**: a condition starting with `>`, `<`, `>=`, `<=`, `=`, or `!=` is compared numerically — e.g. `>80` alerts when a temperature sensor exceeds 80. Mix freely with state strings: `unavailable,>80`.
+- **To-do lists** (`todo.*`) alert whenever the list has at least one pending item. Add a numeric condition (e.g. `>3`) to change the threshold.
 - Attribute-based conditions are not supported directly — create a [template binary sensor](https://www.home-assistant.io/integrations/template/) and watch that.
+
+## Effects
+
+Each rule has an effect: **solid** (default), **blink** (on/off every second — for critical alerts), or **pulse** (full/dim breathing). Blinking is driven by Home Assistant, so it works per-LED even though WLED effects are per-segment.
+
+## Quiet hours
+
+At the bottom of the card: choose **Dim alerts** (25% brightness) or **Hide alerts** between two times (windows may cross midnight). Alerts reappear at full brightness when the window ends.
+
+## Strip state restore
+
+Before painting its first alert, the integration snapshots what the mapped LEDs were showing (via WLED's live view) and restores those exact colors when all alerts clear — so alerts no longer leave black pixels behind on a strip running an effect or preset.
+
+## Locating LEDs
+
+Tap 🔦 on any rule to flash its LEDs three times on the physical strip. Tap a rule's text to open the watched entity's more-info dialog.
 
 ## Services
 

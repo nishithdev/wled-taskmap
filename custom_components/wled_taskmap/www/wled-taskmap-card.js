@@ -64,6 +64,7 @@ class WledTaskmapCard extends HTMLElement {
         this._rules = JSON.parse(JSON.stringify(this._entry.rules || []));
         this._quiet = Object.assign({ start: "", end: "", mode: "off" }, this._entry.quiet || {});
         this._segment = this._entry.segment ?? 0;
+        this._pet = Object.assign({ enabled: false, start: 0, size: 3, sources: [] }, this._entry.pet || {});
       }
       this._render();
     } catch (e) {
@@ -107,6 +108,17 @@ class WledTaskmapCard extends HTMLElement {
       entry_id: this._entry.entry_id,
       leds: r.leds,
       color: r.color,
+    });
+  }
+
+  async _savePet() {
+    await this._hass.callWS({
+      type: "wled_taskmap/save_pet",
+      entry_id: this._entry.entry_id,
+      enabled: !!this._pet.enabled,
+      start: parseInt(this._pet.start, 10) || 0,
+      size: Math.max(2, parseInt(this._pet.size, 10) || 3),
+      sources: this._pet.sources || [],
     });
   }
 
@@ -438,6 +450,21 @@ class WledTaskmapCard extends HTMLElement {
           <span style="margin-left:auto" title="WLED segment ID (leave 0 unless you use segments)">segment
             <input type="number" class="segment" min="0" max="31" value="${this._segment ?? 0}" style="width:48px"></span>
         </div>
+        <div class="quiet">
+          🐾 LED pet
+          <label style="display:inline-flex;align-items:center;gap:4px"><input type="checkbox" class="peton" ${this._pet?.enabled ? "checked" : ""}> enabled</label>
+          <span class="petcfg" style="${this._pet?.enabled ? "" : "display:none"}">
+            home: LED <input type="number" class="petstart" min="0" max="1024" value="${this._pet?.start ?? 0}" style="width:54px">
+            size <input type="number" class="petsize" min="2" max="20" value="${this._pet?.size ?? 3}" style="width:44px">
+            ${this._pet?.mood ? `· mood: <b>${{happy:"happy 🌱",content:"content 😌",grumpy:"grumpy 😾",sad:"sulking 😞"}[this._pet.mood] || this._pet.mood}</b>` : ""}
+          </span>
+        </div>
+        ${this._pet?.enabled ? `<div class="quiet" style="border-top:none;margin-top:2px;padding-top:0">
+          it watches:
+          ${(this._pet.sources || []).map((s) => `<button class="chip on" data-petsrc="${s}">${s} ✕</button>`).join("")}
+          <input class="petsrcadd" list="petentities" placeholder="add a to-do list or sensor…" style="min-width:180px">
+          <datalist id="petentities">${Object.keys(this._hass.states).sort().map((e) => `<option value="${e}">`).join("")}</datalist>
+        </div>` : ""}
         <div class="flash"></div>
       </ha-card>`;
 
@@ -490,6 +517,28 @@ class WledTaskmapCard extends HTMLElement {
     seg?.addEventListener("change", async () => {
       this._segment = seg.value;
       await this._saveQuiet();
+    });
+    const peton = root.querySelector(".peton");
+    peton?.addEventListener("change", async () => { this._pet.enabled = peton.checked; await this._savePet(); this._render(); });
+    ["petstart", "petsize"].forEach((cls) => {
+      const inp = root.querySelector("." + cls);
+      inp?.addEventListener("change", async () => {
+        this._pet[cls === "petstart" ? "start" : "size"] = inp.value;
+        await this._savePet();
+      });
+    });
+    root.querySelectorAll("[data-petsrc]").forEach((b) =>
+      b.addEventListener("click", async () => {
+        this._pet.sources = (this._pet.sources || []).filter((s) => s !== b.dataset.petsrc);
+        await this._savePet(); this._render();
+      }));
+    const psrc = root.querySelector(".petsrcadd");
+    psrc?.addEventListener("change", async () => {
+      const v = psrc.value.trim();
+      if (v && this._hass.states[v] && !(this._pet.sources || []).includes(v)) {
+        this._pet.sources = [...(this._pet.sources || []), v];
+        await this._savePet(); this._render();
+      }
     });
     ["qstart", "qend"].forEach((cls) => {
       const inp = root.querySelector("." + cls);

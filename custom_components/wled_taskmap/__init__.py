@@ -44,6 +44,7 @@ from .const import (
     CONF_LED_COUNT,
     CONF_LEDS,
     CONF_MAPPINGS,
+    CONF_PET,
     CONF_QUIET_END,
     CONF_QUIET_MODE,
     CONF_QUIET_START,
@@ -56,6 +57,7 @@ from .const import (
     DOMAIN,
     EFFECTS,
     OFF_COLOR,
+    PET_MOODS,
     PULSE_LOW_FACTOR,
     QUIET_MODES,
     SERVICE_CLEAR_ALERT,
@@ -226,6 +228,13 @@ class TaskMapManager:
         self._unsub_minute = None
         self._unsub_registry = None
         self._offline = False  # avoid log spam while WLED is unreachable
+        # LED pet
+        self.pet: dict = entry.options.get(CONF_PET) or {}
+        self.pet_mood = "content"
+        self._pet_pos = 0.0
+        self._pet_dir = 1
+        self._pet_phase = 0
+        self._unsub_pet = None
         # rule idx -> cancel callback for a pending "for N minutes" timer
         self._pending: dict[int, callback] = {}
         # rule idx -> last alert state written to the logbook
@@ -473,7 +482,7 @@ class TaskMapManager:
                 self._manage_blink(
                     any(e != "solid" for _, e in active.values())
                 )
-                await self._update_painted(set(active))
+                await self._update_painted(set(active) | self.pet_leds)
             else:
                 # No visible alerts: restore whatever the strip showed before
                 if self.snapshot is not None:
@@ -489,7 +498,7 @@ class TaskMapManager:
                         [v for led in sorted(self._painted) for v in (led, OFF_COLOR)]
                     )
                 self._manage_blink(False)
-                await self._update_painted(set())
+                await self._update_painted(self.pet_leds)
 
         async_dispatcher_send(self.hass, f"{SIGNAL_UPDATE}_{self.entry.entry_id}")
 
@@ -548,6 +557,118 @@ class TaskMapManager:
         await self.push()
         if strip_off_quiet and not was_on:
             await self._set_strip_power(False)  # back to quiet-hours darkness
+
+    # ---------- LED pet ----------
+
+    @property
+    def pet_enabled(self) -> bool:
+        return bool(self.pet.get("enabled")) and int(self.pet.get("size", 0)) >= 2
+
+    @property
+    def pet_leds(self) -> set[int]:
+        if not self.pet_enabled:
+            return set()
+        start = int(self.pet.get("start", 0))
+        return set(range(start, start + int(self.pet.get("size", 3))))
+
+    def _pet_score(self) -> int:
+        score = 0
+        for entity_id in self.pet.get("sources", []):
+            state = self.hass.states.get(entity_id)
+            if state is None or state.state in ("unavailable", "unknown"):
+                score += 2
+            elif entity_id.startswith("todo."):
+                try:
+                    score += min(int(float(state.state)), 5)
+                except (ValueError, TypeError):
+                    score += 2
+            elif state.state.lower() in ("on", "error", "problem", "open", "failed"):
+                score += 3
+        return score
+
+    def _compute_mood(self) -> str:
+        score = self._pet_score()
+        if score == 0:
+            return "happy"
+        if score <= 2:
+            return "content"
+        if score <= 5:
+            return "grumpy"
+        return "sad"
+
+    async def _pet_tick(self) -> None:
+        import math
+
+        quiet = self._in_quiet()
+        if quiet and self.quiet_mode in ("hide", "strip_off"):
+            return  # pet sleeps during quiet hours
+        mood = self._compute_mood()
+        if mood != self.pet_mood:
+            self.pet_mood = mood
+            self._log_pet_mood(mood)
+            async_dispatcher_send(
+                self.hass, f"{SIGNAL_UPDATE}_{self.entry.entry_id}"
+            )
+        (base, lo, depth, move_every) = PET_MOODS[mood]
+        size = int(self.pet.get("size", 3))
+        start = int(self.pet.get("start", 0))
+        self._pet_phase += 1
+        breath = (math.sin(self._pet_phase / 2.5) + 1) / 2
+        bright = lo + depth * breath
+        if quiet and self.quiet_mode == "dim":
+            bright *= DIM_FACTOR
+        # movement: bounce within the home block (sad pet sits in the corner)
+        if move_every and self._pet_phase % move_every == 0:
+            self._pet_pos += self._pet_dir
+            if self._pet_pos >= size - 2 or self._pet_pos <= 0:
+                self._pet_dir *= -1
+                self._pet_pos = max(0, min(size - 2, self._pet_pos))
+        if mood == "sad":
+            self._pet_pos = 0
+        body = {int(self._pet_pos), int(self._pet_pos) + 1}
+        color = "".join(f"{round(c * bright):02X}" for c in base)
+        tail = "".join(f"{round(c * bright * 0.25):02X}" for c in base)
+        i_array: list = []
+        for offset in range(size):
+            if offset in body:
+                px = color
+            elif offset + self._pet_dir in body and mood == "happy":
+                px = tail  # little glow trail when happy
+            else:
+                px = OFF_COLOR
+            i_array.extend([start + offset, px])
+        await self._send(i_array, turn_on=True)
+        if not self.pet_leds <= self._painted:
+            await self._update_painted(self._painted | self.pet_leds)
+
+    def _log_pet_mood(self, mood: str) -> None:
+        try:
+            from homeassistant.components.logbook import async_log_entry
+        except ImportError:
+            return
+        if "logbook" not in self.hass.config.components:
+            return
+        messages = {
+            "happy": "is bouncing around happily — everything's done 🌱",
+            "content": "is relaxing — just a couple of things pending",
+            "grumpy": "is getting grumpy — chores are piling up",
+            "sad": "is sulking in the corner — too much is overdue",
+        }
+        async_log_entry(self.hass, "LED pet", messages[mood], DOMAIN, None)
+
+    def _manage_pet(self) -> None:
+        if self.pet_enabled and self._unsub_pet is None:
+
+            @callback
+            def _tick(_now) -> None:
+                self.hass.async_create_task(self._pet_tick())
+
+            self._unsub_pet = async_track_time_interval(
+                self.hass, _tick, timedelta(seconds=1)
+            )
+        elif not self.pet_enabled and self._unsub_pet is not None:
+            self._unsub_pet()
+            self._unsub_pet = None
 
     # ---------- timers ----------
 
@@ -673,9 +794,9 @@ class TaskMapManager:
         await self.fetch_info()
         data = await self._store.async_load() or {}
         self._painted = {int(x) for x in data.get("leds", [])}
-        # LEDs painted by a previous incarnation (deleted rules, restarts)
-        # that no current rule covers: turn them off now.
-        stale = self._painted - self.all_leds
+        # LEDs painted by a previous incarnation (deleted rules, restarts,
+        # disabled pet) that nothing current covers: turn them off now.
+        stale = self._painted - self.all_leds - self.pet_leds
         if stale:
             await self._send(
                 [v for led in sorted(stale) for v in (led, OFF_COLOR)]
@@ -718,6 +839,7 @@ class TaskMapManager:
                 await self._set_strip_power(False)
 
         self.refresh_all()
+        self._manage_pet()
         await self.push()
 
     async def async_stop(self) -> None:
@@ -726,10 +848,11 @@ class TaskMapManager:
             self._unsub_blink,
             self._unsub_minute,
             self._unsub_registry,
+            self._unsub_pet,
         ):
             if unsub:
                 unsub()
-        self._unsub_state = self._unsub_blink = None
+        self._unsub_state = self._unsub_blink = self._unsub_pet = None
         self._unsub_minute = self._unsub_registry = None
         for idx in list(self._pending):
             self._cancel_pending(idx)
@@ -756,6 +879,7 @@ def ws_get_config(hass, connection, msg) -> None:
                     "end": manager.entry.options.get(CONF_QUIET_END, ""),
                     "mode": manager.quiet_mode,
                 },
+                "pet": {**manager.pet, "mood": manager.pet_mood},
             }
         )
     connection.send_result(msg["id"], {"entries": entries})
@@ -823,6 +947,37 @@ async def ws_save_settings(hass, connection, msg) -> None:
 
 @websocket_api.websocket_command(
     {
+        vol.Required("type"): f"{DOMAIN}/save_pet",
+        vol.Required("entry_id"): str,
+        vol.Required("enabled"): bool,
+        vol.Required("start"): vol.Coerce(int),
+        vol.Required("size"): vol.All(vol.Coerce(int), vol.Range(min=2, max=20)),
+        vol.Required("sources"): [str],
+    }
+)
+@websocket_api.async_response
+async def ws_save_pet(hass, connection, msg) -> None:
+    entry = hass.config_entries.async_get_entry(msg["entry_id"])
+    if entry is None:
+        connection.send_error(msg["id"], "not_found", "Config entry not found")
+        return
+    hass.config_entries.async_update_entry(
+        entry,
+        options={
+            **entry.options,
+            CONF_PET: {
+                "enabled": msg["enabled"],
+                "start": msg["start"],
+                "size": msg["size"],
+                "sources": msg["sources"],
+            },
+        },
+    )
+    connection.send_result(msg["id"], {"ok": True})
+
+
+@websocket_api.websocket_command(
+    {
         vol.Required("type"): f"{DOMAIN}/test_rule",
         vol.Required("entry_id"): str,
         vol.Required(CONF_LEDS): [int],
@@ -864,6 +1019,7 @@ async def _async_setup_shared(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_get_config)
     websocket_api.async_register_command(hass, ws_save_rules)
     websocket_api.async_register_command(hass, ws_save_settings)
+    websocket_api.async_register_command(hass, ws_save_pet)
     websocket_api.async_register_command(hass, ws_test_rule)
 
 

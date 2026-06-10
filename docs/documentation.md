@@ -118,6 +118,21 @@ Each rule has an optional delay: the condition must hold continuously for N minu
 
 Every alert fire and clear is written to the Home Assistant Logbook: *"3D Printer lit LEDs 3-5 (error)"*, *"3D Printer cleared LEDs 3-5"*. To answer "what lit LED 5 last night?", open **Logbook** and filter by the watched entity — or look at the entity's history directly. Entries appear under the watched entity, so they also show in its more-info dialog.
 
+## The LED pet 🐾
+
+An optional tamagotchi that lives in a small block of LEDs and reflects household upkeep. Enable it in the card's settings rows: pick its home (start LED + size, minimum 2) and the entities it "watches" — to-do lists and problem sensors.
+
+Its mood is computed from the watched entities (each pending to-do item, problem state, or unavailable device adds to a neglect score):
+
+| Mood | Looks like | When |
+|---|---|---|
+| happy 🌱 | bright green, bounces around its home with a glow trail | everything done, no problems |
+| content 😌 | soft blue, slow breathing, ambles occasionally | 1–2 things pending |
+| grumpy 😾 | dim orange, barely moves | chores piling up |
+| sulking 😞 | dim grey, sits motionless in the corner | lots overdue or broken |
+
+Mood changes are written to the Logbook ("LED pet is getting grumpy — chores are piling up") and exposed as `pet_mood` on the Active Alerts sensor, so you can automate on it (notify when the pet starts sulking). The pet sleeps during quiet hours (hidden/strip-off modes) and dims in dim mode. Give it LEDs that no alert rule uses.
+
 ## Locating LEDs
 
 Tap 🔦 on any rule to flash its LEDs three times on the physical strip. Tap a rule's text to open the watched entity's more-info dialog.

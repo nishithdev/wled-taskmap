@@ -51,6 +51,7 @@ class ActiveAlertsSensor(SensorEntity):
     @property
     def extra_state_attributes(self) -> dict:
         return {
+            "pet_mood": self._manager.pet_mood if self._manager.pet_enabled else None,
             "alerting_entities": self._manager.alerting_entities,
             "manual_leds": sorted(self._manager.manual_alerts),
             "watched": [

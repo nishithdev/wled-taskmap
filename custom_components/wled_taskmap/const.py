@@ -38,6 +38,17 @@ DIM_FACTOR = 0.25
 PULSE_LOW_FACTOR = 0.15
 BLINK_INTERVAL = 1.0  # seconds
 
+# LED pet (tamagotchi) — entry options
+CONF_PET = "pet"  # {"enabled": bool, "start": int, "size": int, "sources": [...]}
+
+PET_MOODS = {
+    # mood: (r, g, b base color, min brightness, breath depth, move every N ticks)
+    "happy": ((0, 220, 140), 0.35, 0.65, 1),
+    "content": ((60, 140, 255), 0.25, 0.45, 3),
+    "grumpy": ((255, 120, 0), 0.15, 0.25, 6),
+    "sad": ((110, 110, 110), 0.08, 0.10, 0),  # 0 = doesn't move
+}
+
 SERVICE_SET_ALERT = "set_alert"
 SERVICE_CLEAR_ALERT = "clear_alert"
 SERVICE_CLEAR_ALL = "clear_all"

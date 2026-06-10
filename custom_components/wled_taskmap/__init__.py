@@ -32,6 +32,7 @@ from .const import (
     CARD_URL,
     CONF_ALERT_STATES,
     CONF_COLOR,
+    CONF_COLOR2,
     CONF_EFFECT,
     CONF_ENTITY_ID,
     CONF_FILL_MAX,
@@ -103,9 +104,13 @@ def normalize_rule(rule: dict) -> dict:
     fill_max = _num(CONF_FILL_MAX, 100.0)
     if fill_max <= fill_min:
         fill_max = fill_min + 1.0
+    color2 = str(rule.get(CONF_COLOR2, "") or "").lstrip("#").upper()
+    if color2 != "RAINBOW" and len(color2) != 6:
+        color2 = ""
     return {
         CONF_FILL_MIN: fill_min,
         CONF_FILL_MAX: fill_max,
+        CONF_COLOR2: color2,
         CONF_ENTITY_ID: rule[CONF_ENTITY_ID],
         CONF_LEDS: leds,
         CONF_COLOR: str(rule.get(CONF_COLOR, DEFAULT_COLOR)).lstrip("#").upper(),
@@ -121,6 +126,52 @@ def _dim(color: str, factor: float) -> str:
         return f"{int(r * factor):02X}{int(g * factor):02X}{int(b * factor):02X}"
     except (ValueError, IndexError):
         return color
+
+
+def _lerp_color(c1: str, c2: str, t: float) -> str:
+    """Blend two hex colors through hue space, so red->green passes through
+    orange and yellow instead of muddy olive."""
+    import colorsys
+
+    try:
+        a = [int(c1[i : i + 2], 16) / 255 for i in (0, 2, 4)]
+        b = [int(c2[i : i + 2], 16) / 255 for i in (0, 2, 4)]
+    except (ValueError, IndexError):
+        return c1
+    h1, s1, v1 = colorsys.rgb_to_hsv(*a)
+    h2, s2, v2 = colorsys.rgb_to_hsv(*b)
+    if s1 < 0.05 or v1 < 0.05:  # gray/black endpoints: plain RGB blend
+        r, g, bl = (a[i] + (b[i] - a[i]) * t for i in range(3))
+    elif s2 < 0.05 or v2 < 0.05:
+        r, g, bl = (a[i] + (b[i] - a[i]) * t for i in range(3))
+    else:
+        dh = h2 - h1  # take the shortest way around the hue wheel
+        if dh > 0.5:
+            dh -= 1.0
+        elif dh < -0.5:
+            dh += 1.0
+        r, g, bl = colorsys.hsv_to_rgb(
+            (h1 + dh * t) % 1.0, s1 + (s2 - s1) * t, v1 + (v2 - v1) * t
+        )
+    return f"{round(r * 255):02X}{round(g * 255):02X}{round(bl * 255):02X}"
+
+
+def _rainbow(t: float) -> str:
+    import colorsys
+
+    r, g, b = colorsys.hsv_to_rgb(0.75 * t, 1.0, 1.0)  # red -> green -> blue/violet
+    return f"{round(r * 255):02X}{round(g * 255):02X}{round(b * 255):02X}"
+
+
+def _rule_color_at(rule: dict, pos: int, total: int) -> str:
+    """Color for the LED at position pos of total in this rule's block."""
+    color2 = rule.get(CONF_COLOR2, "")
+    if not color2:
+        return rule[CONF_COLOR]
+    t = pos / (total - 1) if total > 1 else 0.0
+    if color2 == "RAINBOW":
+        return _rainbow(t)
+    return _lerp_color(rule[CONF_COLOR], color2, t)
 
 
 def _match_condition(token: str, value: str) -> bool:
@@ -290,12 +341,17 @@ class TaskMapManager:
                     continue
                 lo, hi = rule[CONF_FILL_MIN], rule[CONF_FILL_MAX]
                 frac = max(0.0, min(1.0, (val - lo) / (hi - lo)))
-                lit = round(frac * len(rule[CONF_LEDS]))
-                for led in sorted(rule[CONF_LEDS])[:lit]:
-                    leds[led] = (rule[CONF_COLOR], "solid")
+                block = sorted(rule[CONF_LEDS])
+                lit = round(frac * len(block))
+                for pos, led in enumerate(block[:lit]):
+                    leds[led] = (_rule_color_at(rule, pos, len(block)), "solid")
                 continue
-            for led in rule[CONF_LEDS]:
-                leds[led] = (rule[CONF_COLOR], rule[CONF_EFFECT])
+            block = sorted(rule[CONF_LEDS])
+            for pos, led in enumerate(block):
+                leds[led] = (
+                    _rule_color_at(rule, pos, len(block)),
+                    rule[CONF_EFFECT],
+                )
         for led, color in self.manual_alerts.items():
             leds[led] = (color, "solid")
         return leds
@@ -668,6 +724,7 @@ def ws_get_config(hass, connection, msg) -> None:
                 vol.Optional(CONF_FOR_MINUTES, default=0): vol.Coerce(float),
                 vol.Optional(CONF_FILL_MIN, default=0): vol.Coerce(float),
                 vol.Optional(CONF_FILL_MAX, default=100): vol.Coerce(float),
+                vol.Optional(CONF_COLOR2, default=""): str,
             }
         ],
     }

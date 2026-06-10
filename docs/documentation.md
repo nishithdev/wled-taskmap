@@ -77,6 +77,16 @@ Each rule has an effect:
 
 Blink/pulse are driven by Home Assistant, so they work per-LED even though WLED effects are per-segment.
 
+## Color styles
+
+Next to the color picker, choose how the rule's LED block is colored:
+
+- **single** — every LED in the rule uses the one color.
+- **gradient** — pick two colors; LEDs blend from the first to the second across the block. Blending follows the hue wheel, so red → green passes through orange and yellow (a battery fill from red to green reads like a real gauge).
+- **rainbow** — a full hue sweep (red → yellow → green → blue → violet) across the block; no color pickers needed.
+
+Color styles combine with any effect. With **fill**, the gradient spans the whole block and the bar reveals it as the value rises — e.g. a 10-LED battery bar shows red at 10%, red-through-yellow at 50%, and the full red→green ramp at 100%. The card previews the exact colors on the strip as you select LEDs.
+
 ## Quiet hours
 
 At the bottom of the card, choose what happens between two times (windows may cross midnight):

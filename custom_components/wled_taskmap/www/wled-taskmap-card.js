@@ -132,9 +132,11 @@ class WledTaskmapCard extends HTMLElement {
         forMin: r.for_minutes || 0,
         fillMin: r.fill_min ?? 0,
         fillMax: r.fill_max ?? 100,
+        colorStyle: r.color2 === "RAINBOW" ? "rainbow" : r.color2 ? "gradient" : "single",
+        color2: r.color2 && r.color2 !== "RAINBOW" ? "#" + r.color2 : "#00C853",
       };
     } else {
-      this._form = { entity: "", states: new Set(["unavailable", "error"]), color: "#FF0000", effect: "solid", forMin: 0, fillMin: 0, fillMax: 100 };
+      this._form = { entity: "", states: new Set(["unavailable", "error"]), color: "#FF0000", effect: "solid", forMin: 0, fillMin: 0, fillMax: 100, colorStyle: "single", color2: "#00C853" };
     }
     this._render();
   }
@@ -163,6 +165,8 @@ class WledTaskmapCard extends HTMLElement {
       for_minutes: Math.max(0, parseFloat(this._form.forMin) || 0),
       fill_min: parseFloat(this._form.fillMin) || 0,
       fill_max: parseFloat(this._form.fillMax) || 100,
+      color2: this._form.colorStyle === "rainbow" ? "RAINBOW"
+        : this._form.colorStyle === "gradient" ? this._form.color2.replace("#", "").toUpperCase() : "",
     };
     if (this._editing !== null) this._rules[this._editing] = rule;
     else this._rules.push(rule);
@@ -205,6 +209,36 @@ class WledTaskmapCard extends HTMLElement {
 
   // ---------- rendering ----------
 
+  static _hsv2hex(h, s, v) {
+    const f = (n) => { const k = (n + h * 6) % 6; return v - v * s * Math.max(0, Math.min(k, 4 - k, 1)); };
+    return "#" + [f(5), f(3), f(1)].map((x) => Math.round(x * 255).toString(16).padStart(2, "0")).join("");
+  }
+
+  static _hex2hsv(hex) {
+    const r = parseInt(hex.slice(1, 3), 16) / 255, g = parseInt(hex.slice(3, 5), 16) / 255, b = parseInt(hex.slice(5, 7), 16) / 255;
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
+    let h = 0;
+    if (d) h = mx === r ? ((g - b) / d % 6) / 6 : mx === g ? ((b - r) / d + 2) / 6 : ((r - g) / d + 4) / 6;
+    if (h < 0) h += 1;
+    return [h, mx ? d / mx : 0, mx];
+  }
+
+  _previewColor(i) {
+    // Gradient/rainbow-aware color for selected LED i (matches backend hue blending)
+    const sel = [...this._selected].sort((a, b) => a - b);
+    const pos = sel.indexOf(i), n = sel.length;
+    const t = n > 1 ? pos / (n - 1) : 0;
+    if (this._form.colorStyle === "rainbow") return WledTaskmapCard._hsv2hex(0.75 * t, 1, 1);
+    if (this._form.colorStyle === "gradient") {
+      const [h1, s1, v1] = WledTaskmapCard._hex2hsv(this._form.color);
+      const [h2, s2, v2] = WledTaskmapCard._hex2hsv(this._form.color2);
+      let dh = h2 - h1;
+      if (dh > 0.5) dh -= 1; else if (dh < -0.5) dh += 1;
+      return WledTaskmapCard._hsv2hex(((h1 + dh * t) % 1 + 1) % 1, s1 + (s2 - s1) * t, v1 + (v2 - v1) * t);
+    }
+    return this._form.color;
+  }
+
   _ledColor(i) {
     if (this._selected.has(i)) return null; // selection style wins
     for (let r = this._rules.length - 1; r >= 0; r--) {
@@ -232,8 +266,9 @@ class WledTaskmapCard extends HTMLElement {
     const leds = Array.from({ length: n }, (_, i) => {
       const ruleColor = this._ledColor(i);
       const sel = this._selected.has(i);
+      const pc = sel ? this._previewColor(i) : null;
       const style = sel
-        ? `background:${this._form.color};box-shadow:0 0 6px ${this._form.color};border-color:var(--primary-text-color)`
+        ? `background:${pc};box-shadow:0 0 6px ${pc};border-color:var(--primary-text-color)`
         : ruleColor
         ? `background:${ruleColor};opacity:.45`
         : "";
@@ -249,6 +284,7 @@ class WledTaskmapCard extends HTMLElement {
         : `is ${r.alert_states.split(",").join(" / ")}`;
       const ledsTxt = r.leds.length > 6 ? `${r.leds.length} LEDs` : `LED ${r.leds.join(", ")}`;
       const fx = (r.effect === "blink" ? " · ⚡ blink" : r.effect === "pulse" ? " · 〰 pulse" : r.effect === "fill" ? " · ▮▯ fill bar" : "")
+        + (r.color2 === "RAINBOW" ? " · 🌈" : r.color2 ? " · gradient" : "")
         + (r.for_minutes > 0 ? ` · ⏱ after ${r.for_minutes}m` : "");
       return `<div class="rule">
         <span class="dot" style="background:#${r.color}"></span>
@@ -302,7 +338,13 @@ class WledTaskmapCard extends HTMLElement {
              <input class="newstate" placeholder="other…" size="8"></div>
              <div class="hint">Number sensor? Type a comparison instead, e.g. <b>&gt;80</b> or <b>&lt;20</b></div>`}
         <div class="step"><span class="num">${editingTodo ? 3 : 4}</span> Light them in this color
-          <input type="color" class="color" value="${this._form.color}">
+          <select class="colorstyle">
+            <option value="single" ${this._form.colorStyle === "single" ? "selected" : ""}>single</option>
+            <option value="gradient" ${this._form.colorStyle === "gradient" ? "selected" : ""}>gradient</option>
+            <option value="rainbow" ${this._form.colorStyle === "rainbow" ? "selected" : ""}>rainbow</option>
+          </select>
+          ${this._form.colorStyle !== "rainbow" ? `<input type="color" class="color" value="${this._form.color}">` : ""}
+          ${this._form.colorStyle === "gradient" ? `→ <input type="color" class="color2" value="${this._form.color2}">` : ""}
           <span class="chips" style="display:inline-flex;margin-left:10px">
             ${["solid","blink","pulse","fill"].map((e) =>
               `<button class="chip ${this._form.effect === e ? "on" : ""}" data-effect="${e}">${e === "blink" ? "⚡ " : e === "pulse" ? "〰 " : ""}${e}</button>`).join("")}
@@ -338,7 +380,7 @@ class WledTaskmapCard extends HTMLElement {
         .chip{border:1px solid var(--divider-color);background:var(--card-background-color);color:var(--primary-text-color);border-radius:14px;padding:4px 10px;cursor:pointer;font-size:.85em}
         .chip.on{background:var(--primary-color);color:#fff;border-color:var(--primary-color)}
         .newstate{border:1px dashed var(--divider-color);background:none;border-radius:14px;padding:4px 10px;color:var(--primary-text-color);font-size:.85em}
-        .cmpop,.cmpval{background:var(--card-background-color);color:var(--primary-text-color);border:1px solid var(--divider-color);border-radius:6px;padding:5px 6px;font-size:.9em}
+        .cmpop,.cmpval,.colorstyle{background:var(--card-background-color);color:var(--primary-text-color);border:1px solid var(--divider-color);border-radius:6px;padding:5px 6px;font-size:.9em}
         .addcmp{border-style:dashed}
         .color{margin-left:8px;width:48px;height:28px;border:none;background:none;cursor:pointer;vertical-align:middle}
         .actions{margin-top:12px;display:flex;gap:8px}
@@ -449,6 +491,10 @@ class WledTaskmapCard extends HTMLElement {
     });
     const color = root.querySelector(".color");
     color?.addEventListener("input", () => { this._form.color = color.value; this._render(); });
+    const color2 = root.querySelector(".color2");
+    color2?.addEventListener("input", () => { this._form.color2 = color2.value; this._render(); });
+    const cstyle = root.querySelector(".colorstyle");
+    cstyle?.addEventListener("change", () => { this._form.colorStyle = cstyle.value; this._render(); });
     const formin = root.querySelector(".formin");
     formin?.addEventListener("change", () => { this._form.forMin = formin.value; });
     const fmin = root.querySelector(".fillmin");

@@ -10,6 +10,7 @@ CONF_MAPPINGS = "mappings"
 CONF_ENTITY_ID = "entity_id"
 CONF_LEDS = "leds"
 CONF_COLOR = "color"
+CONF_COLOR2 = "color2"  # "" = single color, hex = gradient end, "RAINBOW" = hue sweep
 CONF_ALERT_STATES = "alert_states"
 CONF_EFFECT = "effect"  # solid | blink | pulse
 CONF_FOR_MINUTES = "for_minutes"  # flap protection: condition must hold this long

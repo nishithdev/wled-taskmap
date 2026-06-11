@@ -52,7 +52,61 @@ class WledTaskmapCard extends HTMLElement {
 
   set hass(hass) {
     this._hass = hass;
-    if (!this._loaded) { this._loaded = true; this._load(); }
+    if (!this._loaded) { this._loaded = true; this._load(); return; }
+    // light live refresh: every ~5s pull alert/connection state
+    const now = Date.now();
+    if (this._entry && (!this._lastPoll || now - this._lastPoll > 5000)) {
+      this._lastPoll = now;
+      this._poll();
+    }
+  }
+
+  async _poll() {
+    try {
+      const data = await this._hass.callWS({ type: "wled_taskmap/get_config" });
+      const fresh = (data.entries || []).find((e) => e.entry_id === this._entry.entry_id);
+      if (!fresh) return;
+      const key = JSON.stringify([fresh.active, fresh.alerting, fresh.acked, fresh.offline, fresh.pet?.mood]);
+      if (key !== this._liveKey) {
+        this._liveKey = key;
+        Object.assign(this._entry, {
+          active: fresh.active, alerting: fresh.alerting, acked: fresh.acked,
+          offline: fresh.offline, offline_since: fresh.offline_since,
+        });
+        if (this._pet) this._pet.mood = fresh.pet?.mood;
+        if (!this._formOpen) this._render();
+      }
+    } catch (e) { /* transient */ }
+  }
+
+  async _ack(i) {
+    const res = await this._hass.callWS({
+      type: "wled_taskmap/ack_rule", entry_id: this._entry.entry_id, index: i,
+    });
+    this._entry.acked = res.acked;
+    this._render();
+  }
+
+  async _togglePause(i) {
+    this._rules[i].enabled = this._rules[i].enabled === false;
+    await this._save();
+    this._render();
+  }
+
+  async _duplicate(i) {
+    const copy = JSON.parse(JSON.stringify(this._rules[i]));
+    copy.name = copy.name ? copy.name + " (copy)" : "";
+    this._rules.splice(i + 1, 0, copy);
+    await this._save();
+    this._render();
+  }
+
+  async _move(from, to) {
+    if (to < 0 || to >= this._rules.length || from === to) return;
+    const [r] = this._rules.splice(from, 1);
+    this._rules.splice(to, 0, r);
+    await this._save();
+    this._render();
   }
 
   async _load() {
@@ -88,6 +142,8 @@ class WledTaskmapCard extends HTMLElement {
         fill_min: r.fill_min ?? 0,
         fill_max: r.fill_max ?? 100,
         color2: r.color2 || "",
+        enabled: r.enabled !== false,
+        name: r.name || "",
       })),
     });
   }
@@ -154,10 +210,18 @@ class WledTaskmapCard extends HTMLElement {
         fillMax: r.fill_max ?? 100,
         colorStyle: r.color2 === "RAINBOW" ? "rainbow" : r.color2 ? "gradient" : "single",
         color2: r.color2 && r.color2 !== "RAINBOW" ? "#" + r.color2 : "#00C853",
+        name: r.name || "",
+        enabled: r.enabled !== false,
       };
     } else {
-      this._form = { entity: "", states: new Set(["unavailable", "error"]), color: "#FF0000", effect: "solid", forMin: 0, fillMin: 0, fillMax: 100, colorStyle: "single", color2: "#00C853" };
+      this._form = { entity: "", states: new Set(["unavailable", "error"]), color: "#FF0000", effect: "solid", forMin: 0, fillMin: 0, fillMax: 100, colorStyle: "single", color2: "#00C853", name: "", enabled: true };
     }
+    this._render();
+  }
+
+  _openStarter(preset) {
+    this._openForm(null);
+    Object.assign(this._form, preset);
     this._render();
   }
 
@@ -187,6 +251,8 @@ class WledTaskmapCard extends HTMLElement {
       fill_max: parseFloat(this._form.fillMax) || 100,
       color2: this._form.colorStyle === "rainbow" ? "RAINBOW"
         : this._form.colorStyle === "gradient" ? this._form.color2.replace("#", "").toUpperCase() : "",
+      name: (this._form.name || "").trim(),
+      enabled: this._form.enabled !== false,
     };
     if (this._editing !== null) this._rules[this._editing] = rule;
     else this._rules.push(rule);
@@ -195,7 +261,19 @@ class WledTaskmapCard extends HTMLElement {
   }
 
   async _deleteRule(i) {
+    clearTimeout(this._undoTimer);
+    this._undo = { rule: this._rules[i], index: i };
     this._rules.splice(i, 1);
+    await this._save();
+    this._render();
+    this._undoTimer = setTimeout(() => { this._undo = null; this._render(); }, 6000);
+  }
+
+  async _undoDelete() {
+    if (!this._undo) return;
+    clearTimeout(this._undoTimer);
+    this._rules.splice(Math.min(this._undo.index, this._rules.length), 0, this._undo.rule);
+    this._undo = null;
     await this._save();
     this._render();
   }
@@ -228,6 +306,21 @@ class WledTaskmapCard extends HTMLElement {
   }
 
   // ---------- rendering ----------
+
+  _starterHtml() {
+    const states = this._hass.states;
+    const ids = Object.keys(states);
+    const battery = ids.find((e) => states[e].attributes?.device_class === "battery"
+      && /phone|pixel|iphone|galaxy/i.test(states[e].attributes?.friendly_name || e))
+      || ids.find((e) => states[e].attributes?.device_class === "battery");
+    const todo = ids.find((e) => e.startsWith("todo."));
+    const opts = [];
+    if (battery) opts.push(`<button class="chip starter" data-starter="battery" data-ent="${battery}">🔋 Battery gauge for ${states[battery].attributes?.friendly_name || battery}</button>`);
+    if (todo) opts.push(`<button class="chip starter" data-starter="todo" data-ent="${todo}">📝 Light up when ${states[todo].attributes?.friendly_name || todo} has items</button>`);
+    opts.push(`<button class="chip starter" data-starter="unavailable">⚠️ Alert when a device goes unavailable</button>`);
+    return `<div class="empty">No alerts yet — try one of these, or tap “Add alert”:</div>
+      <div class="chips" style="margin:4px 0 8px">${opts.join("")}</div>`;
+  }
 
   static _hsv2hex(h, s, v) {
     const f = (n) => { const k = (n + h * 6) % 6; return v - v * s * Math.max(0, Math.min(k, 4 - k, 1)); };
@@ -298,20 +391,27 @@ class WledTaskmapCard extends HTMLElement {
       && !(entState.attributes || {}).options
       && entState.state !== "" && !isNaN(parseFloat(entState.state)) && isFinite(entState.state);
 
+    const live = this._entry.active || {};
     const leds = Array.from({ length: n }, (_, i) => {
       const ruleColor = this._ledColor(i);
       const sel = this._selected.has(i);
       const pc = sel ? this._previewColor(i) : null;
+      const liveColor = !this._formOpen && live[i] ? "#" + live[i] : null;
       const style = sel
         ? `background:${pc};box-shadow:0 0 6px ${pc};border-color:var(--primary-text-color)`
+        : liveColor
+        ? `background:${liveColor};box-shadow:0 0 8px ${liveColor}`
         : ruleColor
         ? `background:${ruleColor};opacity:.45`
         : "";
-      return `<div class="led ${sel ? "sel" : ""}" data-i="${i}" style="${style}" title="LED ${i}"></div>`;
+      return `<div class="led ${sel ? "sel" : ""}" data-i="${i}" style="${style}" title="LED ${i}${liveColor ? " (lit now)" : ""}"></div>`;
     }).join("");
 
+    const alerting = new Set(this._entry.alerting || []);
+    const acked = new Set(this._entry.acked || []);
     const rules = this._rules.map((r, i) => {
-      const name = this._hass.states[r.entity_id]?.attributes?.friendly_name || r.entity_id;
+      const paused = r.enabled === false;
+      const name = r.name || this._hass.states[r.entity_id]?.attributes?.friendly_name || r.entity_id;
       const when = r.effect === "fill"
         ? `fills ${r.fill_min ?? 0}–${r.fill_max ?? 100}`
         : r.entity_id.startsWith("todo.")
@@ -320,15 +420,23 @@ class WledTaskmapCard extends HTMLElement {
       const ledsTxt = r.leds.length > 6 ? `${r.leds.length} LEDs` : `LED ${r.leds.join(", ")}`;
       const fx = (r.effect === "blink" ? " · ⚡ blink" : r.effect === "pulse" ? " · 〰 pulse" : r.effect === "fill" ? " · ▮▯ fill bar" : "")
         + (r.color2 === "RAINBOW" ? " · 🌈" : r.color2 ? " · gradient" : "")
-        + (r.for_minutes > 0 ? ` · ⏱ after ${r.for_minutes}m` : "");
-      return `<div class="rule">
-        <span class="dot" style="background:#${r.color}"></span>
+        + (r.for_minutes > 0 ? ` · ⏱ after ${r.for_minutes}m` : "")
+        + (paused ? " · paused" : acked.has(i) ? " · silenced" : "");
+      const ackBtn = !paused && (alerting.has(i) || acked.has(i))
+        ? `<button class="icon" data-ack="${i}" title="${acked.has(i) ? "Un-silence" : "Silence until the state changes"}">${acked.has(i) ? "🔕" : "🔔"}</button>`
+        : "";
+      return `<div class="rule ${paused ? "paused" : ""}" draggable="true" data-idx="${i}">
+        <span class="drag" title="Drag to reorder (later rules win on shared LEDs)">⠿</span>
+        <span class="dot" style="background:#${r.color}${alerting.has(i) && !paused ? ";box-shadow:0 0 6px #" + r.color : ""}"></span>
         <span class="rtext" data-info="${r.entity_id}" title="Show entity details"><b>${name}</b> ${when} → ${ledsTxt}${fx}</span>
+        ${ackBtn}
+        <button class="icon" data-pause="${i}" title="${paused ? "Resume this alert" : "Pause this alert"}">${paused ? "▶" : "⏸"}</button>
+        <button class="icon" data-dup="${i}" title="Duplicate">⧉</button>
         <button class="icon" data-test="${i}" title="Flash these LEDs on the strip">🔦</button>
         <button class="icon" data-edit="${i}" title="Edit">✏️</button>
         <button class="icon" data-del="${i}" title="Delete">🗑</button>
       </div>`;
-    }).join("") || `<div class="empty">No alerts yet. Tap “Add alert”.</div>`;
+    }).join("") || (this._formOpen ? "" : this._starterHtml());
 
     const stateChips = this._formOpen && !editingTodo
       ? this._entityStateSuggestions().map((s) =>
@@ -386,6 +494,8 @@ class WledTaskmapCard extends HTMLElement {
             ${["solid","blink","pulse","fill"].map((e) =>
               `<button class="chip ${this._form.effect === e ? "on" : ""}" data-effect="${e}">${e === "blink" ? "⚡ " : e === "pulse" ? "〰 " : ""}${e}</button>`).join("")}
           </span></div>
+        <div class="step">🏷 Name (optional)
+          <input class="rulename" placeholder="e.g. Printer health" value="${this._form.name || ""}" style="width:200px;background:var(--card-background-color);color:var(--primary-text-color);border:1px solid var(--divider-color);border-radius:6px;padding:5px 6px"></div>
         <div class="step">⏱ Only alert after
           <input type="number" class="formin" min="0" step="0.5" value="${this._form.forMin}" style="width:60px"> minutes in that state
           <span class="hint" style="display:inline">(0 = immediately; avoids flickering from devices that briefly drop off)</span></div>
@@ -430,9 +540,17 @@ class WledTaskmapCard extends HTMLElement {
         .rtext:hover{text-decoration:underline}
         .quiet{margin-top:14px;padding-top:10px;border-top:1px solid var(--divider-color);font-size:.88em;color:var(--secondary-text-color);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
         .quiet select,.quiet input{background:var(--card-background-color);color:var(--primary-text-color);border:1px solid var(--divider-color);border-radius:6px;padding:4px 6px}
+        .banner{background:rgba(255,69,58,.15);color:var(--error-color,#ff453a);border:1px solid rgba(255,69,58,.4);border-radius:8px;padding:8px 12px;margin:6px 0;font-size:.9em;display:flex;align-items:center;gap:10px}
+        .banner.undo{background:rgba(10,132,255,.12);color:var(--primary-text-color);border-color:rgba(10,132,255,.4)}
+        .rule.paused{opacity:.45}
+        .drag{cursor:grab;color:var(--secondary-text-color);user-select:none}
+        .rule.dragover{border-top:2px solid var(--primary-color)}
+        .starter{border-style:dashed}
       </style>
       <ha-card>
         <h2>LED Alerts</h2>
+        ${this._entry.offline ? `<div class="banner">⚠️ WLED unreachable${this._entry.offline_since ? " since " + new Date(this._entry.offline_since).toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"}) : ""} — check power/network</div>` : ""}
+        ${this._undo ? `<div class="banner undo">Rule deleted <button class="chip undobtn">Undo</button></div>` : ""}
         <div class="sub">${this._entry.host} · ${n} LEDs${this._formOpen ? " · tap or drag across the strip to choose LEDs" : ""}</div>
         <div class="strip">${leds}</div>
         <div class="rules">${rules}</div>
@@ -506,6 +624,34 @@ class WledTaskmapCard extends HTMLElement {
       b.addEventListener("click", () => this._deleteRule(+b.dataset.del)));
     root.querySelectorAll("[data-test]").forEach((b) =>
       b.addEventListener("click", () => this._testRule(+b.dataset.test)));
+    root.querySelectorAll("[data-ack]").forEach((b) =>
+      b.addEventListener("click", () => this._ack(+b.dataset.ack)));
+    root.querySelectorAll("[data-pause]").forEach((b) =>
+      b.addEventListener("click", () => this._togglePause(+b.dataset.pause)));
+    root.querySelectorAll("[data-dup]").forEach((b) =>
+      b.addEventListener("click", () => this._duplicate(+b.dataset.dup)));
+    root.querySelector(".undobtn")?.addEventListener("click", () => this._undoDelete());
+    root.querySelectorAll("[data-starter]").forEach((b) =>
+      b.addEventListener("click", () => {
+        const ent = b.dataset.ent || "";
+        if (b.dataset.starter === "battery") this._openStarter({ entity: ent, effect: "fill", colorStyle: "gradient", color: "#FF0000", color2: "#00C853", fillMin: 0, fillMax: 100, name: "Battery gauge" });
+        else if (b.dataset.starter === "todo") this._openStarter({ entity: ent, color: "#FF9F0A", name: "" });
+        else this._openStarter({ states: new Set(["unavailable"]), color: "#FF0000", name: "" });
+      }));
+    // drag to reorder
+    let dragFrom = null;
+    root.querySelectorAll(".rule[draggable]").forEach((row) => {
+      row.addEventListener("dragstart", () => { dragFrom = +row.dataset.idx; });
+      row.addEventListener("dragover", (e) => { e.preventDefault(); row.classList.add("dragover"); });
+      row.addEventListener("dragleave", () => row.classList.remove("dragover"));
+      row.addEventListener("drop", (e) => {
+        e.preventDefault(); row.classList.remove("dragover");
+        if (dragFrom !== null) this._move(dragFrom, +row.dataset.idx);
+        dragFrom = null;
+      });
+    });
+    const rname = root.querySelector(".rulename");
+    rname?.addEventListener("input", () => { this._form.name = rname.value; });
     root.querySelectorAll("[data-info]").forEach((el) =>
       el.addEventListener("click", () => this._moreInfo(el.dataset.info)));
     root.querySelectorAll("[data-effect]").forEach((b) =>

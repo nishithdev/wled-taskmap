@@ -13,6 +13,8 @@ CONF_COLOR = "color"
 CONF_COLOR2 = "color2"  # "" = single color, hex = gradient end, "RAINBOW" = hue sweep
 CONF_ALERT_STATES = "alert_states"
 CONF_EFFECT = "effect"  # solid | blink | pulse
+CONF_ENABLED = "enabled"  # rule pause toggle
+CONF_NAME_ = "name"  # optional custom rule label
 CONF_FOR_MINUTES = "for_minutes"  # flap protection: condition must hold this long
 CONF_FILL_MIN = "fill_min"  # fill effect: value mapped to 0% of the LED block
 CONF_FILL_MAX = "fill_max"  # fill effect: value mapped to 100% of the LED block

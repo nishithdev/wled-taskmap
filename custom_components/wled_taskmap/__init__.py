@@ -35,7 +35,9 @@ from .const import (
     CONF_COLOR,
     CONF_COLOR2,
     CONF_EFFECT,
+    CONF_ENABLED,
     CONF_ENTITY_ID,
+    CONF_NAME_,
     CONF_FILL_MAX,
     CONF_FILL_MIN,
     CONF_FOR_MINUTES,
@@ -114,6 +116,8 @@ def normalize_rule(rule: dict) -> dict:
         CONF_FILL_MIN: fill_min,
         CONF_FILL_MAX: fill_max,
         CONF_COLOR2: color2,
+        CONF_ENABLED: bool(rule.get(CONF_ENABLED, True)),
+        CONF_NAME_: str(rule.get(CONF_NAME_, "") or "")[:60],
         CONF_ENTITY_ID: rule[CONF_ENTITY_ID],
         CONF_LEDS: leds,
         CONF_COLOR: str(rule.get(CONF_COLOR, DEFAULT_COLOR)).lstrip("#").upper(),
@@ -237,6 +241,9 @@ class TaskMapManager:
         self._pet_sleeping = False
         self._unsub_pet = None
         self._had_alerts = False  # power-on only on the none->some transition
+        # rule idx -> state string at acknowledgement; suppressed until it changes
+        self.acked: dict[int, str] = {}
+        self.offline_since: str | None = None
         # rule idx -> cancel callback for a pending "for N minutes" timer
         self._pending: dict[int, callback] = {}
         # rule idx -> last alert state written to the logbook
@@ -308,7 +315,20 @@ class TaskMapManager:
         for idx, rule in enumerate(self.rules):
             if rule[CONF_ENTITY_ID] != entity_id:
                 continue
+            if not rule.get(CONF_ENABLED, True):
+                self._cancel_pending(idx)
+                self.rule_alerts[idx] = False
+                continue
             raw = self._is_alert(rule, state)
+            if raw and idx in self.acked:
+                if state is not None and state.state == self.acked[idx]:
+                    # acknowledged: stay quiet until the state changes
+                    self._cancel_pending(idx)
+                    self.rule_alerts[idx] = False
+                    continue
+                self.acked.pop(idx, None)  # state moved on: ack expires
+            if not raw:
+                self.acked.pop(idx, None)
             if not raw:
                 self._cancel_pending(idx)
                 self.rule_alerts[idx] = False
@@ -450,11 +470,14 @@ class TaskMapManager:
                     )
                 elif self._offline:
                     self._offline = False
+                    self.offline_since = None
                     _LOGGER.info("WLED at %s is reachable again", self.host)
         except Exception as err:  # noqa: BLE001
             # Warn once, then stay quiet until the device recovers
             log = _LOGGER.debug if self._offline else _LOGGER.warning
             log("Could not reach WLED at %s: %s", self.host, err)
+            if not self._offline:
+                self.offline_since = dt_util.now().isoformat()
             self._offline = True
 
     async def push(self) -> None:
@@ -897,6 +920,12 @@ def ws_get_config(hass, connection, msg) -> None:
                     "mode": manager.quiet_mode,
                 },
                 "pet": {**manager.pet, "mood": manager.pet_mood},
+                "alerting": [
+                    idx for idx, on in manager.rule_alerts.items() if on
+                ],
+                "acked": sorted(manager.acked),
+                "offline": manager._offline,
+                "offline_since": manager.offline_since,
             }
         )
     connection.send_result(msg["id"], {"entries": entries})
@@ -917,6 +946,8 @@ def ws_get_config(hass, connection, msg) -> None:
                 vol.Optional(CONF_FILL_MIN, default=0): vol.Coerce(float),
                 vol.Optional(CONF_FILL_MAX, default=100): vol.Coerce(float),
                 vol.Optional(CONF_COLOR2, default=""): str,
+                vol.Optional(CONF_ENABLED, default=True): bool,
+                vol.Optional(CONF_NAME_, default=""): str,
             }
         ],
     }
@@ -960,6 +991,32 @@ async def ws_save_settings(hass, connection, msg) -> None:
         options[CONF_SEGMENT] = msg[CONF_SEGMENT]
     hass.config_entries.async_update_entry(entry, options=options)
     connection.send_result(msg["id"], {"ok": True})
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): f"{DOMAIN}/ack_rule",
+        vol.Required("entry_id"): str,
+        vol.Required("index"): vol.Coerce(int),
+    }
+)
+@websocket_api.async_response
+async def ws_ack_rule(hass, connection, msg) -> None:
+    """Toggle acknowledgement of a currently-alerting rule."""
+    manager = hass.data.get(DOMAIN, {}).get(msg["entry_id"])
+    if manager is None or not 0 <= msg["index"] < len(manager.rules):
+        connection.send_error(msg["id"], "not_found", "Rule not found")
+        return
+    idx = msg["index"]
+    if idx in manager.acked:
+        manager.acked.pop(idx)
+    else:
+        rule = manager.rules[idx]
+        state = manager.hass.states.get(rule[CONF_ENTITY_ID])
+        manager.acked[idx] = state.state if state else ""
+    manager.refresh_entity(manager.rules[idx][CONF_ENTITY_ID])
+    await manager.push()
+    connection.send_result(msg["id"], {"acked": sorted(manager.acked)})
 
 
 @websocket_api.websocket_command(
@@ -1037,6 +1094,7 @@ async def _async_setup_shared(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_save_rules)
     websocket_api.async_register_command(hass, ws_save_settings)
     websocket_api.async_register_command(hass, ws_save_pet)
+    websocket_api.async_register_command(hass, ws_ack_rule)
     websocket_api.async_register_command(hass, ws_test_rule)
 
 

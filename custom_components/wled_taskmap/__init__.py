@@ -234,7 +234,9 @@ class TaskMapManager:
         self._pet_pos = 0.0
         self._pet_dir = 1
         self._pet_phase = 0
+        self._pet_sleeping = False
         self._unsub_pet = None
+        self._had_alerts = False  # power-on only on the none->some transition
         # rule idx -> cancel callback for a pending "for N minutes" timer
         self._pending: dict[int, callback] = {}
         # rule idx -> last alert state written to the logbook
@@ -478,7 +480,10 @@ class TaskMapManager:
                     else:
                         color = self._background(led)
                     i_array.extend([led, color])
-                await self._send(i_array, turn_on=True)
+                # Only force power on when alerts first appear, so the user
+                # can still turn the strip off during a blinking alert.
+                await self._send(i_array, turn_on=not self._had_alerts)
+                self._had_alerts = True
                 self._manage_blink(
                     any(e != "solid" for _, e in active.values())
                 )
@@ -497,6 +502,7 @@ class TaskMapManager:
                     await self._send(
                         [v for led in sorted(self._painted) for v in (led, OFF_COLOR)]
                     )
+                self._had_alerts = False
                 self._manage_blink(False)
                 await self._update_painted(self.pet_leds)
 
@@ -601,7 +607,15 @@ class TaskMapManager:
 
         quiet = self._in_quiet()
         if quiet and self.quiet_mode in ("hide", "strip_off"):
-            return  # pet sleeps during quiet hours
+            # pet sleeps during quiet hours: blank its pixels once
+            if not self._pet_sleeping:
+                self._pet_sleeping = True
+                async with self._lock:
+                    await self._send(
+                        [v for led in sorted(self.pet_leds) for v in (led, OFF_COLOR)]
+                    )
+            return
+        self._pet_sleeping = False
         mood = self._compute_mood()
         if mood != self.pet_mood:
             self.pet_mood = mood
@@ -637,7 +651,10 @@ class TaskMapManager:
             else:
                 px = OFF_COLOR
             i_array.extend([start + offset, px])
-        await self._send(i_array, turn_on=True)
+        # Never force the strip's power on: the pet rides along with whatever
+        # power state the user (or an alert) has set.
+        async with self._lock:
+            await self._send(i_array)
         if not self.pet_leds <= self._painted:
             await self._update_painted(self._painted | self.pet_leds)
 

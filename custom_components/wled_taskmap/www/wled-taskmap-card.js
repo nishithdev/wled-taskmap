@@ -39,6 +39,8 @@ class WledTaskmapCard extends HTMLElement {
     this._formOpen = false;
     this._form = { entity: "", states: new Set(), color: "#FF0000", effect: "solid" };
     this._quiet = { start: "", end: "", mode: "off" };
+    this._segment = 0;
+    this._pet = { enabled: false, start: 0, size: 3, sources: [] };
     this._dragging = false;
     this._dragMode = true;
     this._loaded = false;

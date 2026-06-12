@@ -244,6 +244,8 @@ class TaskMapManager:
         # rule idx -> state string at acknowledgement; suppressed until it changes
         self.acked: dict[int, str] = {}
         self.offline_since: str | None = None
+        self._last_uptime: int | None = None
+        self._unsub_health = None
         # rule idx -> cancel callback for a pending "for N minutes" timer
         self._pending: dict[int, callback] = {}
         # rule idx -> last alert state written to the logbook
@@ -280,6 +282,8 @@ class TaskMapManager:
     # ---------- alert evaluation ----------
 
     def _is_alert(self, rule: dict, state) -> bool:
+        if not rule[CONF_ENTITY_ID]:
+            return True  # static rule: always lit while enabled
         if state is None:
             return False
         value = state.state
@@ -358,7 +362,10 @@ class TaskMapManager:
         return _fire
 
     def refresh_all(self) -> None:
-        for entity_id in {r[CONF_ENTITY_ID] for r in self.rules}:
+        for idx, rule in enumerate(self.rules):
+            if not rule[CONF_ENTITY_ID]:  # static rule
+                self.rule_alerts[idx] = bool(rule.get(CONF_ENABLED, True))
+        for entity_id in {r[CONF_ENTITY_ID] for r in self.rules if r[CONF_ENTITY_ID]}:
             self.refresh_entity(entity_id)
 
     @property
@@ -569,6 +576,48 @@ class TaskMapManager:
             self._painted = painted
             await self._store.async_save({"leds": sorted(painted)})
 
+    async def resync(self) -> None:
+        """Fully repaint the strip (e.g. after the WLED device rebooted)."""
+        async with self._lock:
+            # The strip now shows its boot state: that IS the new background.
+            self.snapshot = None
+            await self._update_painted(set())
+        self.refresh_all()
+        await self.push()
+        if self.pet_enabled:
+            await self._pet_tick()
+
+    async def _health_check(self) -> None:
+        """Detect reboots (uptime reset) and reconnects; resync when found."""
+        session = async_get_clientsession(self.hass)
+        try:
+            async with session.get(
+                f"http://{self.host}/json/info", timeout=10
+            ) as resp:
+                info = await resp.json()
+        except Exception:  # noqa: BLE001
+            if not self._offline:
+                self.offline_since = dt_util.now().isoformat()
+                _LOGGER.warning("Could not reach WLED at %s", self.host)
+            self._offline = True
+            return
+        uptime = int(info.get("uptime", 0))
+        self.led_count = int(info.get("leds", {}).get("count", self.led_count))
+        rebooted = self._last_uptime is not None and uptime < self._last_uptime
+        reconnected = self._offline
+        self._last_uptime = uptime
+        if self._offline:
+            self._offline = False
+            self.offline_since = None
+            _LOGGER.info("WLED at %s is reachable again", self.host)
+        if rebooted or reconnected:
+            _LOGGER.info(
+                "WLED at %s %s — resyncing LEDs",
+                self.host,
+                "rebooted" if rebooted else "reconnected",
+            )
+            await self.resync()
+
     async def flash(self, leds: list[int], color: str, times: int = 3) -> None:
         """Briefly flash specific LEDs so the user can locate them."""
         strip_off_quiet = self._in_quiet() and self.quiet_mode == "strip_off"
@@ -739,8 +788,8 @@ class TaskMapManager:
         if "logbook" not in self.hass.config.components:
             return
         for idx, rule in enumerate(self.rules):
-            if rule[CONF_EFFECT] == "fill":
-                continue  # fill bars track values continuously; logging would spam
+            if rule[CONF_EFFECT] == "fill" or not rule[CONF_ENTITY_ID]:
+                continue  # fill bars / static rules: logging would be noise
             now = bool(self.rule_alerts.get(idx))
             before = self._last_logged.get(idx)
             if before is None or before == now:
@@ -771,7 +820,7 @@ class TaskMapManager:
     def _check_missing_entities(self) -> None:
         """Raise a Repairs issue for rules watching entities that don't exist."""
         registry = er.async_get(self.hass)
-        watched = {r[CONF_ENTITY_ID] for r in self.rules}
+        watched = {r[CONF_ENTITY_ID] for r in self.rules if r[CONF_ENTITY_ID]}
         for entity_id in watched:
             issue_id = f"missing_{self.entry.entry_id}_{entity_id}"
             missing = (
@@ -844,7 +893,9 @@ class TaskMapManager:
             await self._update_painted(self._painted - stale)
         self._check_missing_entities()
         self._setup_rename_listener()
-        entity_ids = sorted({r[CONF_ENTITY_ID] for r in self.rules})
+        entity_ids = sorted(
+            {r[CONF_ENTITY_ID] for r in self.rules if r[CONF_ENTITY_ID]}
+        )
         if entity_ids:
 
             @callback
@@ -878,6 +929,14 @@ class TaskMapManager:
             if self._was_quiet and self.quiet_mode == "strip_off":
                 await self._set_strip_power(False)
 
+        @callback
+        def _health(_now) -> None:
+            self.hass.async_create_task(self._health_check())
+
+        self._unsub_health = async_track_time_interval(
+            self.hass, _health, timedelta(seconds=30)
+        )
+
         self.refresh_all()
         self._manage_pet()
         await self.push()
@@ -889,11 +948,12 @@ class TaskMapManager:
             self._unsub_minute,
             self._unsub_registry,
             self._unsub_pet,
+            self._unsub_health,
         ):
             if unsub:
                 unsub()
         self._unsub_state = self._unsub_blink = self._unsub_pet = None
-        self._unsub_minute = self._unsub_registry = None
+        self._unsub_minute = self._unsub_registry = self._unsub_health = None
         for idx in list(self._pending):
             self._cancel_pending(idx)
 
@@ -990,6 +1050,22 @@ async def ws_save_settings(hass, connection, msg) -> None:
     if CONF_SEGMENT in msg:
         options[CONF_SEGMENT] = msg[CONF_SEGMENT]
     hass.config_entries.async_update_entry(entry, options=options)
+    connection.send_result(msg["id"], {"ok": True})
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): f"{DOMAIN}/resync",
+        vol.Required("entry_id"): str,
+    }
+)
+@websocket_api.async_response
+async def ws_resync(hass, connection, msg) -> None:
+    manager = hass.data.get(DOMAIN, {}).get(msg["entry_id"])
+    if manager is None:
+        connection.send_error(msg["id"], "not_found", "Device not found")
+        return
+    await manager.resync()
     connection.send_result(msg["id"], {"ok": True})
 
 
@@ -1095,6 +1171,7 @@ async def _async_setup_shared(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_save_settings)
     websocket_api.async_register_command(hass, ws_save_pet)
     websocket_api.async_register_command(hass, ws_ack_rule)
+    websocket_api.async_register_command(hass, ws_resync)
     websocket_api.async_register_command(hass, ws_test_rule)
 
 

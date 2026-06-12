@@ -133,6 +133,14 @@ Its mood is computed from the watched entities (each pending to-do item, problem
 
 Mood changes are written to the Logbook ("LED pet is getting grumpy — chores are piling up") and exposed as `pet_mood` on the Active Alerts sensor, so you can automate on it (notify when the pet starts sulking). The pet sleeps during quiet hours (hidden/strip-off modes) and dims in dim mode. Give it LEDs that no alert rule uses.
 
+## Static lights (no entity)
+
+When adding an alert, tap **💡 no entity — always lit** in step 2 to make a plain static rule: the selected LEDs simply stay in the chosen color (or gradient/rainbow, with blink/pulse if you like) with no sensor behind them. Useful for zone separators, decorative accents, or "this part of the strip is just a lamp." Pause ⏸ the rule to turn it off.
+
+## Power-cycle resync
+
+The integration checks the device every 30 seconds. If the strip was power-cycled (WLED's uptime reset) or comes back after being unreachable, all alerts, fills, static lights, and the pet are repainted automatically — no more blank strip after flipping the power switch. There's also a manual **↻ sync** button in the card header.
+
 ## Managing alerts day to day
 
 Each rule row in the card has: **⠿ drag handle** (reorder — later rules win on shared LEDs), **🔔/🔕 silence** (shown while alerting: mutes that alert until the entity's state changes again), **⏸/▶ pause** (disable without deleting; row dims), **⧉ duplicate**, **🔦 test flash**, **✏️ edit**, **🗑 delete** (with a 6-second Undo banner). Rules can have an optional custom name shown instead of the entity ID.

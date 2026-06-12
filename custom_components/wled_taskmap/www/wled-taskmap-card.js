@@ -212,9 +212,10 @@ class WledTaskmapCard extends HTMLElement {
         color2: r.color2 && r.color2 !== "RAINBOW" ? "#" + r.color2 : "#00C853",
         name: r.name || "",
         enabled: r.enabled !== false,
+        static: !r.entity_id,
       };
     } else {
-      this._form = { entity: "", states: new Set(["unavailable", "error"]), color: "#FF0000", effect: "solid", forMin: 0, fillMin: 0, fillMax: 100, colorStyle: "single", color2: "#00C853", name: "", enabled: true };
+      this._form = { entity: "", states: new Set(["unavailable", "error"]), color: "#FF0000", effect: "solid", forMin: 0, fillMin: 0, fillMax: 100, colorStyle: "single", color2: "#00C853", name: "", enabled: true, static: false };
     }
     this._render();
   }
@@ -234,12 +235,14 @@ class WledTaskmapCard extends HTMLElement {
 
   async _submitForm() {
     const leds = [...this._selected].sort((a, b) => a - b);
-    const entity = this._form.entity.trim();
-    if (!entity || !this._hass.states[entity]) return this._flash("Pick a valid entity");
+    const isStatic = !!this._form.static;
+    const entity = isStatic ? "" : this._form.entity.trim();
+    if (!isStatic && (!entity || !this._hass.states[entity])) return this._flash("Pick a valid entity");
     if (!leds.length) return this._flash("Tap some LEDs on the strip first");
     const isTodo = entity.startsWith("todo.");
     const isFill = this._form.effect === "fill";
-    if (!isTodo && !isFill && !this._form.states.size) return this._flash("Pick at least one state");
+    if (isStatic && isFill) return this._flash("Fill needs a sensor — pick another effect");
+    if (!isStatic && !isTodo && !isFill && !this._form.states.size) return this._flash("Pick at least one state");
     const rule = {
       entity_id: entity,
       leds,
@@ -411,8 +414,11 @@ class WledTaskmapCard extends HTMLElement {
     const acked = new Set(this._entry.acked || []);
     const rules = this._rules.map((r, i) => {
       const paused = r.enabled === false;
-      const name = r.name || this._hass.states[r.entity_id]?.attributes?.friendly_name || r.entity_id;
-      const when = r.effect === "fill"
+      const isStatic = !r.entity_id;
+      const name = r.name || (isStatic ? "Static light" : this._hass.states[r.entity_id]?.attributes?.friendly_name || r.entity_id);
+      const when = isStatic
+        ? "always lit"
+        : r.effect === "fill"
         ? `fills ${r.fill_min ?? 0}–${r.fill_max ?? 100}`
         : r.entity_id.startsWith("todo.")
         ? "has pending items"
@@ -422,13 +428,13 @@ class WledTaskmapCard extends HTMLElement {
         + (r.color2 === "RAINBOW" ? " · 🌈" : r.color2 ? " · gradient" : "")
         + (r.for_minutes > 0 ? ` · ⏱ after ${r.for_minutes}m` : "")
         + (paused ? " · paused" : acked.has(i) ? " · silenced" : "");
-      const ackBtn = !paused && (alerting.has(i) || acked.has(i))
+      const ackBtn = !paused && !isStatic && (alerting.has(i) || acked.has(i))
         ? `<button class="icon" data-ack="${i}" title="${acked.has(i) ? "Un-silence" : "Silence until the state changes"}">${acked.has(i) ? "🔕" : "🔔"}</button>`
         : "";
       return `<div class="rule ${paused ? "paused" : ""}" draggable="true" data-idx="${i}">
         <span class="drag" title="Drag to reorder (later rules win on shared LEDs)">⠿</span>
         <span class="dot" style="background:#${r.color}${alerting.has(i) && !paused ? ";box-shadow:0 0 6px #" + r.color : ""}"></span>
-        <span class="rtext" data-info="${r.entity_id}" title="Show entity details"><b>${name}</b> ${when} → ${ledsTxt}${fx}</span>
+        <span class="rtext" ${isStatic ? "" : `data-info="${r.entity_id}"`} title="${isStatic ? "" : "Show entity details"}"><b>${name}</b> ${when} → ${ledsTxt}${fx}</span>
         ${ackBtn}
         <button class="icon" data-pause="${i}" title="${paused ? "Resume this alert" : "Pause this alert"}">${paused ? "▶" : "⏸"}</button>
         <button class="icon" data-dup="${i}" title="Duplicate">⧉</button>
@@ -451,10 +457,12 @@ class WledTaskmapCard extends HTMLElement {
     const form = this._formOpen ? `
       <div class="form">
         <div class="step"><span class="num">1</span> Tap the LEDs on the strip above that should light up <span class="count">(${this._selected.size} selected)</span></div>
-        <div class="step"><span class="num">2</span> When this entity…</div>
-        <input class="entity" list="entities" placeholder="Start typing… e.g. sensor.printer" value="${this._form.entity}">
-        <datalist id="entities">${entityOptions}</datalist>
-        ${isFill
+        <div class="step"><span class="num">2</span> When this entity…
+          <button class="chip ${this._form.static ? "on" : ""}" style="margin-left:8px" data-static title="No entity: these LEDs are simply always lit in the chosen color">💡 no entity — always lit</button></div>
+        ${this._form.static ? `<div class="hint">Static light: these LEDs are always lit in the chosen color. Pause ⏸ the rule to turn them off.</div>`
+          : `<input class="entity" list="entities" placeholder="Start typing… e.g. sensor.printer" value="${this._form.entity}">
+        <datalist id="entities">${entityOptions}</datalist>`}
+        ${this._form.static ? "" : isFill
           ? `<div class="step"><span class="num">3</span> Fill the LEDs as its value goes from
              <input type="number" class="fillmin" value="${this._form.fillMin}" style="width:64px"> to
              <input type="number" class="fillmax" value="${this._form.fillMax}" style="width:64px"></div>
@@ -482,7 +490,7 @@ class WledTaskmapCard extends HTMLElement {
           : `<div class="step"><span class="num">3</span> …is in one of these states</div><div class="chips">${stateChips}
              <input class="newstate" placeholder="other…" size="8"></div>
              <div class="hint">Number sensor? Type a comparison instead, e.g. <b>&gt;80</b> or <b>&lt;20</b></div>`}
-        <div class="step"><span class="num">${editingTodo ? 3 : 4}</span> Light them in this color
+        <div class="step"><span class="num">${this._form.static || editingTodo ? 3 : 4}</span> Light them in this color
           <select class="colorstyle">
             <option value="single" ${this._form.colorStyle === "single" ? "selected" : ""}>single</option>
             <option value="gradient" ${this._form.colorStyle === "gradient" ? "selected" : ""}>gradient</option>
@@ -546,12 +554,14 @@ class WledTaskmapCard extends HTMLElement {
         .drag{cursor:grab;color:var(--secondary-text-color);user-select:none}
         .rule.dragover{border-top:2px solid var(--primary-color)}
         .starter{border-style:dashed}
+        .resync{color:var(--secondary-text-color);font-size:.95em;margin-left:8px;border:1px solid var(--divider-color);border-radius:10px;padding:2px 8px}
       </style>
       <ha-card>
         <h2>LED Alerts</h2>
         ${this._entry.offline ? `<div class="banner">⚠️ WLED unreachable${this._entry.offline_since ? " since " + new Date(this._entry.offline_since).toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"}) : ""} — check power/network</div>` : ""}
         ${this._undo ? `<div class="banner undo">Rule deleted <button class="chip undobtn">Undo</button></div>` : ""}
-        <div class="sub">${this._entry.host} · ${n} LEDs${this._formOpen ? " · tap or drag across the strip to choose LEDs" : ""}</div>
+        <div class="sub">${this._entry.host} · ${n} LEDs${this._formOpen ? " · tap or drag across the strip to choose LEDs" : ""}
+          ${!this._formOpen ? `<button class="icon resync" title="Repaint all LEDs on the strip now (e.g. after the strip was power-cycled)">↻ sync</button>` : ""}</div>
         <div class="strip">${leds}</div>
         <div class="rules">${rules}</div>
         ${form}
@@ -616,6 +626,15 @@ class WledTaskmapCard extends HTMLElement {
       strip.addEventListener("pointerleave", end);
     }
     root.querySelector(".add")?.addEventListener("click", () => this._openForm());
+    root.querySelector(".resync")?.addEventListener("click", async () => {
+      await this._hass.callWS({ type: "wled_taskmap/resync", entry_id: this._entry.entry_id });
+      this._flash("Strip repainted");
+    });
+    root.querySelector("[data-static]")?.addEventListener("click", () => {
+      this._form.static = !this._form.static;
+      if (this._form.static && this._form.effect === "fill") this._form.effect = "solid";
+      this._render();
+    });
     root.querySelector(".cancel")?.addEventListener("click", () => this._closeForm());
     root.querySelector(".save")?.addEventListener("click", () => this._submitForm());
     root.querySelectorAll("[data-edit]").forEach((b) =>

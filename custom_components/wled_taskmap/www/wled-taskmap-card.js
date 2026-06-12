@@ -118,7 +118,8 @@ class WledTaskmapCard extends HTMLElement {
         : entries[0];
       if (this._entry) {
         this._rules = JSON.parse(JSON.stringify(this._entry.rules || []));
-        this._quiet = Object.assign({ start: "", end: "", mode: "off" }, this._entry.quiet || {});
+        this._quiet = Object.assign({ start: "", end: "", mode: "off", dim: 25 }, this._entry.quiet || {});
+        this._intensity = this._entry.intensity ?? 100;
         this._segment = this._entry.segment ?? 0;
         this._pet = Object.assign({ enabled: false, start: 0, size: 3, sources: [] }, this._entry.pet || {});
       }
@@ -156,6 +157,8 @@ class WledTaskmapCard extends HTMLElement {
       quiet_end: this._quiet.end || "",
       quiet_mode: this._quiet.mode || "off",
       segment: parseInt(this._segment, 10) || 0,
+      quiet_dim: Math.min(50, Math.max(5, parseInt(this._quiet.dim, 10) || 25)),
+      intensity: Math.min(100, Math.max(10, parseInt(this._intensity, 10) || 100)),
     });
   }
 
@@ -576,7 +579,11 @@ class WledTaskmapCard extends HTMLElement {
           <span class="qtimes" style="${this._quiet.mode === "off" ? "display:none" : ""}">
             from <input type="time" class="qstart" value="${this._quiet.start}">
             to <input type="time" class="qend" value="${this._quiet.end}">
+            ${this._quiet.mode === "dim" ? `<span title="How dim alerts get at night">night level
+              <input type="range" class="qdim" min="5" max="50" value="${this._quiet.dim ?? 25}" style="width:70px;vertical-align:middle"> ${this._quiet.dim ?? 25}%</span>` : ""}
           </span>
+          <span title="Overall brightness of all alert colors">☀️ intensity
+            <input type="range" class="intensity" min="10" max="100" value="${this._intensity ?? 100}" style="width:80px;vertical-align:middle"> ${this._intensity ?? 100}%</span>
           <span style="margin-left:auto" title="WLED segment ID (leave 0 unless you use segments)">segment
             <input type="number" class="segment" min="0" max="31" value="${this._segment ?? 0}" style="width:48px"></span>
         </div>
@@ -680,6 +687,10 @@ class WledTaskmapCard extends HTMLElement {
       this._quiet.mode = qmode.value;
       await this._saveQuiet(); this._render();
     });
+    const qdim = root.querySelector(".qdim");
+    qdim?.addEventListener("change", async () => { this._quiet.dim = qdim.value; await this._saveQuiet(); this._render(); });
+    const inten = root.querySelector(".intensity");
+    inten?.addEventListener("change", async () => { this._intensity = inten.value; await this._saveQuiet(); this._render(); });
     const seg = root.querySelector(".segment");
     seg?.addEventListener("change", async () => {
       this._segment = seg.value;

@@ -87,6 +87,15 @@ Next to the color picker, choose how the rule's LED block is colored:
 
 Color styles combine with any effect. With **fill**, the gradient spans the whole block and the bar reveals it as the value rises — e.g. a 10-LED battery bar shows red at 10%, red-through-yellow at 50%, and the full red→green ramp at 100%. The card previews the exact colors on the strip as you select LEDs.
 
+## Brightness
+
+Two sliders in the card's settings row control how bright alerts are, independent of WLED's own brightness:
+
+- **☀️ Intensity** (10–100%) — scales every alert color, the pet, and static lights. Turn it down if a bare strip blinds you; keep it at 100% behind a diffuser.
+- **Night level** (5–50%, shown when quiet hours mode is *Dim alerts*) — how dim alerts get during the quiet window. Combine 100% intensity by day with a 10% night level for bright-by-day, glow-by-night.
+
+Note: WLED's global brightness still multiplies on top — alerts can't exceed the strip's own brightness ceiling.
+
 ## Quiet hours
 
 At the bottom of the card, choose what happens between two times (windows may cross midnight):

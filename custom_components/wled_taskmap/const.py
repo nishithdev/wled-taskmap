@@ -22,7 +22,9 @@ CONF_FILL_MAX = "fill_max"  # fill effect: value mapped to 100% of the LED block
 # Quiet hours (entry options)
 CONF_QUIET_START = "quiet_start"  # "22:00"
 CONF_QUIET_END = "quiet_end"  # "07:00"
-CONF_QUIET_MODE = "quiet_mode"  # off | dim | hide
+CONF_QUIET_MODE = "quiet_mode"  # off | dim | hide | strip_off
+CONF_QUIET_DIM = "quiet_dim"  # dim level during quiet hours, 5-50 (%)
+CONF_INTENSITY = "intensity"  # global alert intensity, 10-100 (%)
 
 # Legacy rule keys (pre-0.4.0), migrated automatically
 CONF_LED = "led"

@@ -45,8 +45,10 @@ from .const import (
     CONF_LED,
     CONF_LED_COUNT,
     CONF_LEDS,
+    CONF_INTENSITY,
     CONF_MAPPINGS,
     CONF_PET,
+    CONF_QUIET_DIM,
     CONF_QUIET_END,
     CONF_QUIET_MODE,
     CONF_QUIET_START,
@@ -253,6 +255,24 @@ class TaskMapManager:
         self._lock = asyncio.Lock()
 
     # ---------- quiet hours ----------
+
+    @property
+    def intensity(self) -> float:
+        """Global alert intensity factor 0.1-1.0."""
+        try:
+            pct = float(self.entry.options.get(CONF_INTENSITY, 100))
+        except (ValueError, TypeError):
+            pct = 100.0
+        return max(0.1, min(1.0, pct / 100))
+
+    @property
+    def quiet_dim(self) -> float:
+        """Dim factor during quiet-hours dim mode, 0.05-0.5."""
+        try:
+            pct = float(self.entry.options.get(CONF_QUIET_DIM, DIM_FACTOR * 100))
+        except (ValueError, TypeError):
+            pct = DIM_FACTOR * 100
+        return max(0.05, min(0.5, pct / 100))
 
     @property
     def quiet_mode(self) -> str:
@@ -501,8 +521,10 @@ class TaskMapManager:
                 for led in sorted(self.all_leds):
                     if led in active:
                         color, effect = active[led]
+                        if self.intensity < 1.0:
+                            color = _dim(color, self.intensity)
                         if quiet and self.quiet_mode == "dim":
-                            color = _dim(color, DIM_FACTOR)
+                            color = _dim(color, self.quiet_dim)
                         if effect == "blink" and not self._phase:
                             color = self._background(led)
                         elif effect == "pulse" and not self._phase:
@@ -700,9 +722,9 @@ class TaskMapManager:
         start = int(self.pet.get("start", 0))
         self._pet_phase += 1
         breath = (math.sin(self._pet_phase / 2.5) + 1) / 2
-        bright = lo + depth * breath
+        bright = (lo + depth * breath) * self.intensity
         if quiet and self.quiet_mode == "dim":
-            bright *= DIM_FACTOR
+            bright *= self.quiet_dim
         # movement: bounce within the home block (sad pet sits in the corner)
         if move_every and self._pet_phase % move_every == 0:
             self._pet_pos += self._pet_dir
@@ -978,7 +1000,9 @@ def ws_get_config(hass, connection, msg) -> None:
                     "start": manager.entry.options.get(CONF_QUIET_START, ""),
                     "end": manager.entry.options.get(CONF_QUIET_END, ""),
                     "mode": manager.quiet_mode,
+                    "dim": round(manager.quiet_dim * 100),
                 },
+                "intensity": round(manager.intensity * 100),
                 "pet": {**manager.pet, "mood": manager.pet_mood},
                 "alerting": [
                     idx for idx, on in manager.rule_alerts.items() if on
@@ -1033,6 +1057,8 @@ async def ws_save_rules(hass, connection, msg) -> None:
         vol.Required(CONF_QUIET_END): str,
         vol.Required(CONF_QUIET_MODE): vol.In(QUIET_MODES),
         vol.Optional(CONF_SEGMENT): vol.Coerce(int),
+        vol.Optional(CONF_QUIET_DIM): vol.All(vol.Coerce(int), vol.Range(min=5, max=50)),
+        vol.Optional(CONF_INTENSITY): vol.All(vol.Coerce(int), vol.Range(min=10, max=100)),
     }
 )
 @websocket_api.async_response
@@ -1047,8 +1073,9 @@ async def ws_save_settings(hass, connection, msg) -> None:
         CONF_QUIET_END: msg[CONF_QUIET_END],
         CONF_QUIET_MODE: msg[CONF_QUIET_MODE],
     }
-    if CONF_SEGMENT in msg:
-        options[CONF_SEGMENT] = msg[CONF_SEGMENT]
+    for key in (CONF_SEGMENT, CONF_QUIET_DIM, CONF_INTENSITY):
+        if key in msg:
+            options[key] = msg[key]
     hass.config_entries.async_update_entry(entry, options=options)
     connection.send_result(msg["id"], {"ok": True})
 

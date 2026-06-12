@@ -435,15 +435,19 @@ class WledTaskmapCard extends HTMLElement {
         ? `<button class="icon" data-ack="${i}" title="${acked.has(i) ? "Un-silence" : "Silence until the state changes"}">${acked.has(i) ? "🔕" : "🔔"}</button>`
         : "";
       return `<div class="rule ${paused ? "paused" : ""}" draggable="true" data-idx="${i}">
-        <span class="drag" title="Drag to reorder (later rules win on shared LEDs)">⠿</span>
-        <span class="dot" style="background:#${r.color}${alerting.has(i) && !paused ? ";box-shadow:0 0 6px #" + r.color : ""}"></span>
-        <span class="rtext" ${isStatic ? "" : `data-info="${r.entity_id}"`} title="${isStatic ? "" : "Show entity details"}"><b>${name}</b> ${when} → ${ledsTxt}${fx}</span>
-        ${ackBtn}
-        <button class="icon" data-pause="${i}" title="${paused ? "Resume this alert" : "Pause this alert"}">${paused ? "▶" : "⏸"}</button>
-        <button class="icon" data-dup="${i}" title="Duplicate">⧉</button>
-        <button class="icon" data-test="${i}" title="Flash these LEDs on the strip">🔦</button>
-        <button class="icon" data-edit="${i}" title="Edit">✏️</button>
-        <button class="icon" data-del="${i}" title="Delete">🗑</button>
+        <div class="rmain">
+          <span class="drag" title="Drag to reorder (later rules win on shared LEDs)">⠿</span>
+          <span class="dot" style="background:#${r.color}${alerting.has(i) && !paused ? ";box-shadow:0 0 6px #" + r.color : ""}"></span>
+          <span class="rtext" ${isStatic ? "" : `data-info="${r.entity_id}"`} title="${isStatic ? "" : "Show entity details"}"><b>${name}</b> ${when} → ${ledsTxt}${fx}</span>
+        </div>
+        <div class="ractions">
+          ${ackBtn}
+          <button class="icon" data-pause="${i}" title="${paused ? "Resume this alert" : "Pause this alert"}">${paused ? "▶" : "⏸"}</button>
+          <button class="icon" data-dup="${i}" title="Duplicate">⧉</button>
+          <button class="icon" data-test="${i}" title="Flash these LEDs on the strip">🔦</button>
+          <button class="icon" data-edit="${i}" title="Edit">✏️</button>
+          <button class="icon" data-del="${i}" title="Delete">🗑</button>
+        </div>
       </div>`;
     }).join("") || (this._formOpen ? "" : this._starterHtml());
 
@@ -524,7 +528,9 @@ class WledTaskmapCard extends HTMLElement {
         .strip{display:flex;flex-wrap:wrap;gap:4px;padding:10px;border-radius:10px;background:var(--secondary-background-color);user-select:none}
         .led{width:18px;height:18px;border-radius:50%;background:var(--divider-color);border:2px solid transparent;cursor:pointer;box-sizing:border-box}
         .led:hover{border-color:var(--primary-color)}
-        .rule{display:flex;align-items:center;gap:8px;padding:8px 4px;border-bottom:1px solid var(--divider-color)}
+        .rule{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;padding:8px 4px;border-bottom:1px solid var(--divider-color)}
+        .rmain{display:flex;align-items:center;gap:8px;flex:1 1 240px;min-width:0}
+        .ractions{display:flex;align-items:center;gap:2px;margin-left:auto;flex:0 0 auto}
         .dot{width:14px;height:14px;border-radius:50%;flex-shrink:0}
         .rtext{flex:1;font-size:.92em}
         .icon{background:none;border:none;cursor:pointer;font-size:1em}

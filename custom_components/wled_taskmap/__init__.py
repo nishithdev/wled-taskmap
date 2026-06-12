@@ -53,6 +53,7 @@ from .const import (
     CONF_QUIET_MODE,
     CONF_QUIET_START,
     CONF_SEGMENT,
+    CONF_WEEK,
     DEFAULT_ALERT_STATES,
     DEFAULT_COLOR,
     DEFAULT_EFFECT,
@@ -62,6 +63,7 @@ from .const import (
     EFFECTS,
     OFF_COLOR,
     PET_MOODS,
+    WEEK_PAST_DIM,
     PULSE_LOW_FACTOR,
     QUIET_MODES,
     SERVICE_CLEAR_ALERT,
@@ -248,6 +250,9 @@ class TaskMapManager:
         self.offline_since: str | None = None
         self._last_uptime: int | None = None
         self._unsub_health = None
+        # Week board
+        self.week: dict = entry.options.get(CONF_WEEK) or {}
+        self._unsub_week = None
         # rule idx -> cancel callback for a pending "for N minutes" timer
         self._pending: dict[int, callback] = {}
         # rule idx -> last alert state written to the logbook
@@ -426,6 +431,7 @@ class TaskMapManager:
         for rule in self.rules:
             leds.update(rule[CONF_LEDS])
         leds.update(self.manual_alerts)
+        leds.update(self.week_leds)
         if self.snapshot:
             leds.update(self.snapshot)
         return leds
@@ -512,6 +518,9 @@ class TaskMapManager:
         self._log_alert_changes()
         async with self._lock:
             active = self.active_alerts
+            # week board sits underneath alerts: alerts on shared LEDs win
+            for led, color in self._week_frame().items():
+                active.setdefault(led, (color, "solid"))
             quiet = self._in_quiet()
             hidden = quiet and self.quiet_mode in ("hide", "strip_off")
 
@@ -657,6 +666,63 @@ class TaskMapManager:
         await self.push()
         if strip_off_quiet and not was_on:
             await self._set_strip_power(False)  # back to quiet-hours darkness
+
+    # ---------- week board ----------
+
+    @property
+    def week_enabled(self) -> bool:
+        return bool(self.week.get("enabled")) and int(self.week.get("per_day", 5)) >= 1
+
+    @property
+    def week_leds(self) -> set[int]:
+        if not self.week_enabled:
+            return set()
+        start = int(self.week.get("start", 0))
+        per = int(self.week.get("per_day", 5))
+        return set(range(start, start + per * 7))
+
+    def _week_frame(self) -> dict[int, str]:
+        """led -> color for the week board: past days dim, today fills, rest off."""
+        if not self.week_enabled:
+            return {}
+        w = self.week
+        per = int(w.get("per_day", 5))
+        start = int(w.get("start", 0))
+        color = str(w.get("color", "00A6FF")).lstrip("#").upper()
+        color2 = str(w.get("color2", "") or "").lstrip("#").upper()
+        grad_rule = {CONF_COLOR: color, CONF_COLOR2: color2}
+        now = dt_util.now()
+        today = now.weekday()  # Mon=0
+        if w.get("week_start", "mon") == "sun":
+            today = (today + 1) % 7
+
+        def to_minutes(value: str, default: int) -> int:
+            try:
+                h, m = value.split(":")
+                return int(h) * 60 + int(m)
+            except (ValueError, AttributeError):
+                return default
+
+        day_start = to_minutes(w.get("day_start", "07:00"), 7 * 60)
+        day_end = to_minutes(w.get("day_end", "23:00"), 23 * 60)
+        if day_end <= day_start:
+            day_end = day_start + 60
+        now_m = now.hour * 60 + now.minute
+        frac = max(0.0, min(1.0, (now_m - day_start) / (day_end - day_start)))
+        lit_today = max(1, int(frac * per + 0.5))  # predictable half-up rounding
+
+        frame: dict[int, str] = {}
+        for day in range(7):
+            for pos in range(per):
+                led = start + day * per + pos
+                px = _rule_color_at(grad_rule, pos, per)
+                if day < today:
+                    frame[led] = _dim(px, WEEK_PAST_DIM)
+                elif day == today:
+                    frame[led] = px if pos < lit_today else OFF_COLOR
+                else:
+                    frame[led] = OFF_COLOR
+        return frame
 
     # ---------- LED pet ----------
 
@@ -951,6 +1017,16 @@ class TaskMapManager:
             if self._was_quiet and self.quiet_mode == "strip_off":
                 await self._set_strip_power(False)
 
+        if self.week_enabled:
+
+            @callback
+            def _week_tick(_now) -> None:
+                self.hass.async_create_task(self.push())
+
+            self._unsub_week = async_track_time_interval(
+                self.hass, _week_tick, timedelta(seconds=60)
+            )
+
         @callback
         def _health(_now) -> None:
             self.hass.async_create_task(self._health_check())
@@ -971,11 +1047,13 @@ class TaskMapManager:
             self._unsub_registry,
             self._unsub_pet,
             self._unsub_health,
+            self._unsub_week,
         ):
             if unsub:
                 unsub()
         self._unsub_state = self._unsub_blink = self._unsub_pet = None
-        self._unsub_minute = self._unsub_registry = self._unsub_health = None
+        self._unsub_minute = self._unsub_registry = None
+        self._unsub_health = self._unsub_week = None
         for idx in list(self._pending):
             self._cancel_pending(idx)
 
@@ -1004,6 +1082,7 @@ def ws_get_config(hass, connection, msg) -> None:
                 },
                 "intensity": round(manager.intensity * 100),
                 "pet": {**manager.pet, "mood": manager.pet_mood},
+                "week": dict(manager.week),
                 "alerting": [
                     idx for idx, on in manager.rule_alerts.items() if on
                 ],
@@ -1077,6 +1156,39 @@ async def ws_save_settings(hass, connection, msg) -> None:
         if key in msg:
             options[key] = msg[key]
     hass.config_entries.async_update_entry(entry, options=options)
+    connection.send_result(msg["id"], {"ok": True})
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): f"{DOMAIN}/save_week",
+        vol.Required("entry_id"): str,
+        vol.Required("enabled"): bool,
+        vol.Required("start"): vol.Coerce(int),
+        vol.Required("per_day"): vol.All(vol.Coerce(int), vol.Range(min=1, max=50)),
+        vol.Required("week_start"): vol.In(["mon", "sun"]),
+        vol.Required("day_start"): str,
+        vol.Required("day_end"): str,
+        vol.Required("color"): str,
+        vol.Optional("color2", default=""): str,
+    }
+)
+@websocket_api.async_response
+async def ws_save_week(hass, connection, msg) -> None:
+    entry = hass.config_entries.async_get_entry(msg["entry_id"])
+    if entry is None:
+        connection.send_error(msg["id"], "not_found", "Config entry not found")
+        return
+    week = {
+        k: msg[k]
+        for k in (
+            "enabled", "start", "per_day", "week_start",
+            "day_start", "day_end", "color", "color2",
+        )
+    }
+    hass.config_entries.async_update_entry(
+        entry, options={**entry.options, CONF_WEEK: week}
+    )
     connection.send_result(msg["id"], {"ok": True})
 
 
@@ -1199,6 +1311,7 @@ async def _async_setup_shared(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_save_pet)
     websocket_api.async_register_command(hass, ws_ack_rule)
     websocket_api.async_register_command(hass, ws_resync)
+    websocket_api.async_register_command(hass, ws_save_week)
     websocket_api.async_register_command(hass, ws_test_rule)
 
 

@@ -42,6 +42,12 @@ DIM_FACTOR = 0.25
 PULSE_LOW_FACTOR = 0.15
 BLINK_INTERVAL = 1.0  # seconds
 
+# Week board — entry options
+# {"enabled", "start", "per_day", "week_start" ("mon"|"sun"),
+#  "day_start" "07:00", "day_end" "23:00", "color", "color2"}
+CONF_WEEK = "week"
+WEEK_PAST_DIM = 0.15
+
 # LED pet (tamagotchi) — entry options
 CONF_PET = "pet"  # {"enabled": bool, "start": int, "size": int, "sources": [...]}
 

@@ -142,6 +142,10 @@ Its mood is computed from the watched entities (each pending to-do item, problem
 
 Mood changes are written to the Logbook ("LED pet is getting grumpy — chores are piling up") and exposed as `pet_mood` on the Active Alerts sensor, so you can automate on it (notify when the pet starts sulking). The pet sleeps during quiet hours (hidden/strip-off modes) and dims in dim mode. Give it LEDs that no alert rule uses.
 
+## Week board 📅
+
+An ambient weekly calendar on the strip, configured under **⚙ Extras** in the card: pick a start LED, LEDs per day (e.g. 5 × 7 days = 35), Monday or Sunday first, and your day window (default 07:00–23:00). Today's block fills progressively through the day with a gradient between your two colors (default cool blue → warm amber); past days stay fully lit but dim; future days are off. Pairs well with physical labels (sticky notes) next to each day's block. Alert rules mapped to the same LEDs take priority over the board, and everything survives power cycles via resync.
+
 ## Static lights (no entity)
 
 When adding an alert, tap **💡 no entity — always lit** in step 2 to make a plain static rule: the selected LEDs simply stay in the chosen color (or gradient/rainbow, with blink/pulse if you like) with no sensor behind them. Useful for zone separators, decorative accents, or "this part of the strip is just a lamp." Pause ⏸ the rule to turn it off.

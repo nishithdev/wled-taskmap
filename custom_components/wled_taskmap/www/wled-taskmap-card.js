@@ -41,6 +41,8 @@ class WledTaskmapCard extends HTMLElement {
     this._quiet = { start: "", end: "", mode: "off" };
     this._segment = 0;
     this._pet = { enabled: false, start: 0, size: 3, sources: [] };
+    this._week = { enabled: false, start: 0, per_day: 5, week_start: "mon", day_start: "07:00", day_end: "23:00", color: "00A6FF", color2: "FFB300" };
+    this._showSettings = false;
     this._dragging = false;
     this._dragMode = true;
     this._loaded = false;
@@ -122,6 +124,7 @@ class WledTaskmapCard extends HTMLElement {
         this._intensity = this._entry.intensity ?? 100;
         this._segment = this._entry.segment ?? 0;
         this._pet = Object.assign({ enabled: false, start: 0, size: 3, sources: [] }, this._entry.pet || {});
+        this._week = Object.assign(this._week, this._entry.week || {});
       }
       this._render();
     } catch (e) {
@@ -180,6 +183,21 @@ class WledTaskmapCard extends HTMLElement {
       start: parseInt(this._pet.start, 10) || 0,
       size: Math.max(2, parseInt(this._pet.size, 10) || 3),
       sources: this._pet.sources || [],
+    });
+  }
+
+  async _saveWeek() {
+    await this._hass.callWS({
+      type: "wled_taskmap/save_week",
+      entry_id: this._entry.entry_id,
+      enabled: !!this._week.enabled,
+      start: parseInt(this._week.start, 10) || 0,
+      per_day: Math.max(1, parseInt(this._week.per_day, 10) || 5),
+      week_start: this._week.week_start === "sun" ? "sun" : "mon",
+      day_start: this._week.day_start || "07:00",
+      day_end: this._week.day_end || "23:00",
+      color: (this._week.color || "00A6FF").replace("#", "").toUpperCase(),
+      color2: (this._week.color2 || "").replace("#", "").toUpperCase(),
     });
   }
 
@@ -564,6 +582,8 @@ class WledTaskmapCard extends HTMLElement {
         .rule.dragover{border-top:2px solid var(--primary-color)}
         .starter{border-style:dashed}
         .resync{color:var(--secondary-text-color);font-size:.95em;margin-left:8px;border:1px solid var(--divider-color);border-radius:10px;padding:2px 8px}
+        .settingsbtn{display:block;margin-top:12px;background:none;border:none;color:var(--secondary-text-color);cursor:pointer;font-size:.88em;padding:4px 0}
+        .settingsbtn:hover{color:var(--primary-text-color)}
       </style>
       <ha-card>
         <h2>LED Alerts</h2>
@@ -574,6 +594,23 @@ class WledTaskmapCard extends HTMLElement {
         <div class="strip">${leds}</div>
         <div class="rules">${rules}</div>
         ${form}
+        <button class="settingsbtn" title="Quiet hours, brightness, week board, pet and more">⚙ ${this._showSettings ? "Hide extras" : "Extras"}</button>
+        ${!this._showSettings ? "" : `
+        <div class="quiet">
+          📅 Week board
+          <label style="display:inline-flex;align-items:center;gap:4px"><input type="checkbox" class="weekon" ${this._week?.enabled ? "checked" : ""}> enabled</label>
+          <span style="${this._week?.enabled ? "" : "display:none"}">
+            start LED <input type="number" class="wstart" min="0" max="1024" value="${this._week?.start ?? 0}" style="width:54px">
+            per day <input type="number" class="wper" min="1" max="50" value="${this._week?.per_day ?? 5}" style="width:44px">
+            begins <select class="wfirst">
+              <option value="mon" ${(this._week?.week_start || "mon") === "mon" ? "selected" : ""}>Monday</option>
+              <option value="sun" ${this._week?.week_start === "sun" ? "selected" : ""}>Sunday</option>
+            </select>
+            day <input type="time" class="wds" value="${this._week?.day_start || "07:00"}">–<input type="time" class="wde" value="${this._week?.day_end || "23:00"}">
+            <input type="color" class="wc1" value="#${(this._week?.color || "00A6FF").replace("#", "")}" title="Morning color">→<input type="color" class="wc2" value="#${(this._week?.color2 || "FFB300").replace("#", "")}" title="Evening color">
+          </span>
+        </div>
+        ${this._week?.enabled ? `<div class="hint" style="margin:2px 0 6px">Today's block fills through the day; past days stay dim; the rest of the week is off. Alerts on the same LEDs take priority.</div>` : ""}
         <div class="quiet">
           🌙 Quiet hours
           <select class="qmode">
@@ -607,7 +644,7 @@ class WledTaskmapCard extends HTMLElement {
           ${(this._pet.sources || []).map((s) => `<button class="chip on" data-petsrc="${s}">${s} ✕</button>`).join("")}
           <input class="petsrcadd" list="petentities" placeholder="add a to-do list or sensor…" style="min-width:180px">
           <datalist id="petentities">${Object.keys(this._hass.states).sort().map((e) => `<option value="${e}">`).join("")}</datalist>
-        </div>` : ""}
+        </div>` : ""}`}
         <div class="flash"></div>
       </ha-card>`;
 
@@ -688,6 +725,15 @@ class WledTaskmapCard extends HTMLElement {
       el.addEventListener("click", () => this._moreInfo(el.dataset.info)));
     root.querySelectorAll("[data-effect]").forEach((b) =>
       b.addEventListener("click", () => { this._form.effect = b.dataset.effect; this._render(); }));
+    root.querySelector(".settingsbtn")?.addEventListener("click", () => {
+      this._showSettings = !this._showSettings; this._render();
+    });
+    const weekon = root.querySelector(".weekon");
+    weekon?.addEventListener("change", async () => { this._week.enabled = weekon.checked; await this._saveWeek(); this._render(); });
+    [["wstart","start"],["wper","per_day"],["wfirst","week_start"],["wds","day_start"],["wde","day_end"],["wc1","color"],["wc2","color2"]].forEach(([cls, key]) => {
+      const inp = root.querySelector("." + cls);
+      inp?.addEventListener("change", async () => { this._week[key] = inp.value; await this._saveWeek(); });
+    });
     const qmode = root.querySelector(".qmode");
     qmode?.addEventListener("change", async () => {
       this._quiet.mode = qmode.value;

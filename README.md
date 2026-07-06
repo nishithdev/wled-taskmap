@@ -6,13 +6,28 @@ Light up LEDs on your WLED strip when something needs your attention.
 
 Examples of what it can do:
 
-- LED 3 turns **red** when your 3D printer goes into an error state
-- LEDs 0–4 turn **green** when your shopping list has items on it
-- LED 10 turns **orange** when a backup fails
+- LED 3 **blinks red** when your 3D printer goes into an error state
+- LEDs 0–4 turn **orange** when your shopping list has items on it
+- Ten LEDs become a **live battery gauge**, filling red → yellow → green as your phone charges
+- A block of LEDs works as an **ambient week calendar** — today's block fills as the day passes
+- A tiny **LED pet** bounces happily when your chores are done and sulks grey when they pile up
 
 You set all of this up by **tapping LEDs and picking colors in a visual card** — no YAML, no code.
 
 <p align="center"><img src="assets/demo.gif" width="560" alt="30-second demo: tap LEDs, pick an entity and states, choose a color — done"></p>
+
+## Feature highlights
+
+- **Visual rule builder** — tap/drag LEDs on a live picture of your strip, pick an entity (autocomplete), tap trigger states (entity-aware suggestions, numeric comparisons like `<20`), choose a color. Starter templates get you going on an empty card.
+- **Effects & color styles** — solid, ⚡ blink, 〰 pulse, ▮▯ **fill** (LEDs as a progress bar for any numeric sensor), with **gradient** and 🌈 rainbow color blending across the block.
+- **Week board** 📅 — an ambient weekly calendar: N LEDs per day, today fills through the day with a gradient, past days dim, Monday or Sunday start, day markers on the card.
+- **LED pet** 🐾 — a tamagotchi whose mood (happy → sulking) reflects your to-do lists and problem sensors; mood changes hit the Logbook.
+- **Static lights** 💡 — always-lit LEDs with no entity behind them: separators, accents, plain lamps.
+- **Day-to-day controls** — pause ⏸, silence 🔕 until the state changes, drag to reorder, duplicate, undo delete, custom names, 🔦 test-flash to locate LEDs, live strip view in the card.
+- **Brightness** — global ☀️ intensity slider plus quiet hours 🌙 (dim to a configurable night level, hide alerts, or power the strip off on a schedule — in HA's timezone).
+- **Set-and-forget reliability** — zeroconf auto-discovery, automatic repaint after WLED power-cycles/reconnects, flap protection ("only after N minutes"), entity renames auto-handled, Repairs warnings for dead rules, alert history in the Logbook, offline banner.
+- **💾 Export / Import** — back up or share every rule and setting as one JSON file.
+- **Automation-friendly** — `set_alert`/`clear_alert` services (survive restarts), an Active Alerts sensor, and a websocket API.
 
 Full reference (services, websocket API, troubleshooting): **[docs/documentation.md](docs/documentation.md)**
 
@@ -45,10 +60,13 @@ Full reference (services, websocket API, troubleshooting): **[docs/documentation
 
 ## Step 2 — Connect it to your WLED strip
 
-1. Go to **Settings → Devices & Services**.
-2. Click **+ Add Integration** (bottom right).
-3. Search for **WLED Task Map** and click it.
-4. Type your WLED device's **IP address** (from "What you need" above) and submit.
+In most cases your WLED device is **discovered automatically**: go to **Settings → Devices & Services**, look for "WLED Task Map" under *Discovered*, and click **Add**. Done.
+
+If it isn't discovered:
+
+1. Click **+ Add Integration** (bottom right).
+2. Search for **WLED Task Map** and click it.
+3. Type your WLED device's **IP address** (from "What you need" above) and submit.
 
 That's the entire configuration. If you get "Could not reach the WLED device", double-check the IP and that the strip is powered on.
 

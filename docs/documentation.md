@@ -154,6 +154,12 @@ When adding an alert, tap **💡 no entity — always lit** in step 2 to make a 
 
 The integration checks the device every 30 seconds. If the strip was power-cycled (WLED's uptime reset) or comes back after being unreachable, all alerts, fills, static lights, and the pet are repainted automatically — no more blank strip after flipping the power switch. There's also a manual **↻ sync** button in the card header.
 
+## Backup, export & import
+
+Under **⚙ Extras → 💾 Backup**: **Export** downloads every rule and setting (quiet hours, brightness, segment, week board, pet) as a JSON file; **Import** restores it — rules are replaced, settings applied. Use it as a backup before big changes, to copy a setup between WLED devices, or to share your layout with others.
+
+Manual alerts set via `wled_taskmap.set_alert` now survive Home Assistant restarts.
+
 ## Managing alerts day to day
 
 Each rule row in the card has: **⠿ drag handle** (reorder — later rules win on shared LEDs), **🔔/🔕 silence** (shown while alerting: mutes that alert until the entity's state changes again), **⏸/▶ pause** (disable without deleting; row dims), **⧉ duplicate**, **🔦 test flash**, **✏️ edit**, **🗑 delete** (with a 6-second Undo banner). Rules can have an optional custom name shown instead of the entity ID.

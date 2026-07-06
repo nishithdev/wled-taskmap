@@ -201,6 +201,45 @@ class WledTaskmapCard extends HTMLElement {
     });
   }
 
+  _exportConfig() {
+    const data = {
+      wled_taskmap_export: 1,
+      rules: this._rules,
+      quiet: this._quiet,
+      intensity: this._intensity,
+      segment: this._segment,
+      week: this._week,
+      pet: this._pet,
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "wled-taskmap-backup.json";
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
+  async _importConfig(file) {
+    try {
+      const data = JSON.parse(await file.text());
+      if (!data.wled_taskmap_export || !Array.isArray(data.rules)) {
+        return this._flash("Not a WLED Task Map backup file");
+      }
+      this._rules = data.rules;
+      await this._save();
+      if (data.quiet) { this._quiet = data.quiet; }
+      if (data.intensity != null) this._intensity = data.intensity;
+      if (data.segment != null) this._segment = data.segment;
+      await this._saveQuiet();
+      if (data.week) { this._week = data.week; await this._saveWeek(); }
+      if (data.pet) { this._pet = data.pet; await this._savePet(); }
+      this._render();
+      this._flash(`Imported ${data.rules.length} rule(s) and settings`);
+    } catch (e) {
+      this._flash("Import failed: " + (e.message || e));
+    }
+  }
+
   _moreInfo(entityId) {
     const ev = new CustomEvent("hass-more-info", {
       bubbles: true, composed: true, detail: { entityId },
@@ -416,6 +455,15 @@ class WledTaskmapCard extends HTMLElement {
       && entState.state !== "" && !isNaN(parseFloat(entState.state)) && isFinite(entState.state);
 
     const live = this._entry.active || {};
+    // day markers under the first LED of each week-board block
+    const dayLbl = {};
+    if (this._week?.enabled) {
+      const letters = this._week.week_start === "sun"
+        ? ["S", "M", "T", "W", "T", "F", "S"] : ["M", "T", "W", "T", "F", "S", "S"];
+      const per = Math.max(1, parseInt(this._week.per_day, 10) || 5);
+      const wstart = parseInt(this._week.start, 10) || 0;
+      for (let d = 0; d < 7; d++) dayLbl[wstart + d * per] = letters[d];
+    }
     const leds = Array.from({ length: n }, (_, i) => {
       const ruleColor = this._ledColor(i);
       const sel = this._selected.has(i);
@@ -428,7 +476,7 @@ class WledTaskmapCard extends HTMLElement {
         : ruleColor
         ? `background:${ruleColor};opacity:.45`
         : "";
-      return `<div class="led ${sel ? "sel" : ""}" data-i="${i}" style="${style}" title="LED ${i}${liveColor ? " (lit now)" : ""}"></div>`;
+      return `<div class="led ${sel ? "sel" : ""}" data-i="${i}" ${dayLbl[i] ? `data-lbl="${dayLbl[i]}"` : ""} style="${style}" title="LED ${i}${liveColor ? " (lit now)" : ""}"></div>`;
     }).join("");
 
     const alerting = new Set(this._entry.alerting || []);
@@ -546,6 +594,9 @@ class WledTaskmapCard extends HTMLElement {
         .strip{display:flex;flex-wrap:wrap;gap:4px;padding:10px;border-radius:10px;background:var(--secondary-background-color);user-select:none}
         .led{width:18px;height:18px;border-radius:50%;background:var(--divider-color);border:2px solid transparent;cursor:pointer;box-sizing:border-box}
         .led:hover{border-color:var(--primary-color)}
+        .strip.haslbl{padding-bottom:18px}
+        .strip.haslbl .led{position:relative;margin-bottom:12px}
+        .led[data-lbl]::after{content:attr(data-lbl);position:absolute;top:110%;left:50%;transform:translateX(-50%);font-size:10px;color:var(--secondary-text-color)}
         .rule{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;padding:8px 4px;border-bottom:1px solid var(--divider-color)}
         .rmain{display:flex;align-items:center;gap:8px;flex:1 1 240px;min-width:0}
         .ractions{display:flex;align-items:center;gap:2px;margin-left:auto;flex:0 0 auto}
@@ -591,7 +642,7 @@ class WledTaskmapCard extends HTMLElement {
         ${this._undo ? `<div class="banner undo">Rule deleted <button class="chip undobtn">Undo</button></div>` : ""}
         <div class="sub">${this._entry.host} · ${n} LEDs${this._formOpen ? " · tap or drag across the strip to choose LEDs" : ""}
           ${!this._formOpen ? `<button class="icon resync" title="Repaint all LEDs on the strip now (e.g. after the strip was power-cycled)">↻ sync</button>` : ""}</div>
-        <div class="strip">${leds}</div>
+        <div class="strip ${this._week?.enabled ? "haslbl" : ""}">${leds}</div>
         <div class="rules">${rules}</div>
         ${form}
         <button class="settingsbtn" title="Quiet hours, brightness, week board, pet and more">⚙ ${this._showSettings ? "Hide extras" : "Extras"}</button>
@@ -644,7 +695,13 @@ class WledTaskmapCard extends HTMLElement {
           ${(this._pet.sources || []).map((s) => `<button class="chip on" data-petsrc="${s}">${s} ✕</button>`).join("")}
           <input class="petsrcadd" list="petentities" placeholder="add a to-do list or sensor…" style="min-width:180px">
           <datalist id="petentities">${Object.keys(this._hass.states).sort().map((e) => `<option value="${e}">`).join("")}</datalist>
-        </div>` : ""}`}
+        </div>` : ""}
+        <div class="quiet">
+          💾 Backup
+          <button class="chip exportbtn" title="Download all rules and settings as a JSON file">⬇ Export</button>
+          <button class="chip importbtn" title="Restore rules and settings from a backup file (replaces current rules)">⬆ Import</button>
+          <input type="file" class="importfile" accept=".json,application/json" style="display:none">
+        </div>`}
         <div class="flash"></div>
       </ha-card>`;
 
@@ -727,6 +784,12 @@ class WledTaskmapCard extends HTMLElement {
       b.addEventListener("click", () => { this._form.effect = b.dataset.effect; this._render(); }));
     root.querySelector(".settingsbtn")?.addEventListener("click", () => {
       this._showSettings = !this._showSettings; this._render();
+    });
+    root.querySelector(".exportbtn")?.addEventListener("click", () => this._exportConfig());
+    const importFile = root.querySelector(".importfile");
+    root.querySelector(".importbtn")?.addEventListener("click", () => importFile?.click());
+    importFile?.addEventListener("change", () => {
+      if (importFile.files?.[0]) this._importConfig(importFile.files[0]);
     });
     const weekon = root.querySelector(".weekon");
     weekon?.addEventListener("change", async () => { this._week.enabled = weekon.checked; await this._saveWeek(); this._render(); });

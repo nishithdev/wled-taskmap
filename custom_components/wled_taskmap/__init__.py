@@ -602,10 +602,18 @@ class TaskMapManager:
         elif self._strip_was_on:
             await self._set_strip_power(True)
 
+    async def _save_state(self) -> None:
+        await self._store.async_save(
+            {
+                "leds": sorted(self._painted),
+                "manual": {str(k): v for k, v in self.manual_alerts.items()},
+            }
+        )
+
     async def _update_painted(self, painted: set[int]) -> None:
         if painted != self._painted:
             self._painted = painted
-            await self._store.async_save({"leds": sorted(painted)})
+            await self._save_state()
 
     async def resync(self) -> None:
         """Fully repaint the strip (e.g. after the WLED device rebooted)."""
@@ -971,6 +979,10 @@ class TaskMapManager:
         await self.fetch_info()
         data = await self._store.async_load() or {}
         self._painted = {int(x) for x in data.get("leds", [])}
+        # manual (service-set) alerts survive restarts
+        self.manual_alerts = {
+            int(k): str(v) for k, v in (data.get("manual") or {}).items()
+        }
         # LEDs painted by a previous incarnation (deleted rules, restarts,
         # disabled pet) that nothing current covers: turn them off now.
         stale = self._painted - self.all_leds - self.pet_leds
@@ -1066,6 +1078,10 @@ class TaskMapManager:
 def ws_get_config(hass, connection, msg) -> None:
     entries = []
     for entry_id, manager in hass.data.get(DOMAIN, {}).items():
+        live = {led: c for led, (c, _e) in manager.active_alerts.items()}
+        for led, color in manager._week_frame().items():
+            if color != OFF_COLOR:
+                live.setdefault(led, color)
         entries.append(
             {
                 "entry_id": entry_id,
@@ -1073,7 +1089,7 @@ def ws_get_config(hass, connection, msg) -> None:
                 "segment": manager.segment,
                 "led_count": manager.led_count,
                 "rules": manager.rules,
-                "active": {led: c for led, (c, _e) in manager.active_alerts.items()},
+                "active": live,
                 "quiet": {
                     "start": manager.entry.options.get(CONF_QUIET_START, ""),
                     "end": manager.entry.options.get(CONF_QUIET_END, ""),
@@ -1303,7 +1319,15 @@ async def _async_setup_shared(hass: HomeAssistant) -> None:
         )
     except ImportError:
         hass.http.register_static_path(CARD_URL, str(card_path), True)
-    add_extra_js_url(hass, CARD_URL)
+    # Version the module URL so browsers/apps fetch the new card after an
+    # update instead of serving a stale cached copy (no hard refresh needed).
+    try:
+        from homeassistant.loader import async_get_integration
+
+        version = (await async_get_integration(hass, DOMAIN)).version
+    except Exception:  # noqa: BLE001
+        version = "0"
+    add_extra_js_url(hass, f"{CARD_URL}?v={version}")
 
     websocket_api.async_register_command(hass, ws_get_config)
     websocket_api.async_register_command(hass, ws_save_rules)
@@ -1326,14 +1350,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         manager.manual_alerts[int(call.data[ATTR_LED])] = call.data[
             ATTR_COLOR
         ].lstrip("#")
+        await manager._save_state()
         await manager.push()
 
     async def handle_clear_alert(call: ServiceCall) -> None:
         manager.manual_alerts.pop(int(call.data[ATTR_LED]), None)
+        await manager._save_state()
         await manager.push()
 
     async def handle_clear_all(call: ServiceCall) -> None:
         manager.manual_alerts.clear()
+        await manager._save_state()
         await manager.push()
 
     hass.services.async_register(

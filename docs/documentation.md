@@ -144,7 +144,7 @@ Mood changes are written to the Logbook ("LED pet is getting grumpy — chores a
 
 ## Week board 📅
 
-An ambient weekly calendar on the strip, configured under **⚙ Extras** in the card: pick a start LED, LEDs per day (e.g. 5 × 7 days = 35), Monday or Sunday first, and your day window (default 07:00–23:00). Today's block fills progressively through the day with a gradient between your two colors (default cool blue → warm amber); past days stay fully lit but dim; future days are off. Pairs well with physical labels (sticky notes) next to each day's block. Alert rules mapped to the same LEDs take priority over the board, and everything survives power cycles via resync.
+An ambient weekly calendar on the strip, configured under **⚙ Extras** in the card: pick a start LED, LEDs per day (e.g. 5 × 7 days = 35), Monday or Sunday first, and your day window (default 07:00–23:00). Today's block fills continuously through the day with a gradient between your two colors (default cool blue → warm amber): whole LEDs light fully and the leading LED slowly fades in as its share of the day passes, so the board visibly creeps rather than jumping one LED at a time. Before the day window opens, today is dark. Past days stay fully lit but dim; future days are off. Pairs well with physical labels (sticky notes) next to each day's block. Alert rules mapped to the same LEDs take priority over the board, and everything survives power cycles via resync.
 
 ## Static lights (no entity)
 

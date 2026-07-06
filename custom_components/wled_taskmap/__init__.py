@@ -717,7 +717,11 @@ class TaskMapManager:
             day_end = day_start + 60
         now_m = now.hour * 60 + now.minute
         frac = max(0.0, min(1.0, (now_m - day_start) / (day_end - day_start)))
-        lit_today = max(1, int(frac * per + 0.5))  # predictable half-up rounding
+        # Continuous fill: whole LEDs are full, the leading LED fades in with
+        # the fractional progress. Before the day window starts, nothing is lit.
+        exact = frac * per
+        full = int(exact)
+        partial = exact - full
 
         frame: dict[int, str] = {}
         for day in range(7):
@@ -727,7 +731,12 @@ class TaskMapManager:
                 if day < today:
                     frame[led] = _dim(px, WEEK_PAST_DIM)
                 elif day == today:
-                    frame[led] = px if pos < lit_today else OFF_COLOR
+                    if pos < full:
+                        frame[led] = px
+                    elif pos == full and partial > 0.01:
+                        frame[led] = _dim(px, max(0.05, partial))
+                    else:
+                        frame[led] = OFF_COLOR
                 else:
                     frame[led] = OFF_COLOR
         return frame

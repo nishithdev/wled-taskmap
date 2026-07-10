@@ -390,9 +390,9 @@ class WledTaskmapCard extends HTMLElement {
       || ids.find((e) => states[e].attributes?.device_class === "battery");
     const todo = ids.find((e) => e.startsWith("todo."));
     const opts = [];
-    if (battery) opts.push(`<button class="chip starter" data-starter="battery" data-ent="${battery}">🔋 Battery gauge for ${states[battery].attributes?.friendly_name || battery}</button>`);
-    if (todo) opts.push(`<button class="chip starter" data-starter="todo" data-ent="${todo}">📝 Light up when ${states[todo].attributes?.friendly_name || todo} has items</button>`);
-    opts.push(`<button class="chip starter" data-starter="unavailable">⚠️ Alert when a device goes unavailable</button>`);
+    if (battery) opts.push(`<button class="chip starter" data-starter="battery" data-ent="${battery}"><ha-icon icon="mdi:battery-70"></ha-icon> Battery gauge for ${states[battery].attributes?.friendly_name || battery}</button>`);
+    if (todo) opts.push(`<button class="chip starter" data-starter="todo" data-ent="${todo}"><ha-icon icon="mdi:format-list-checks"></ha-icon> Light up when ${states[todo].attributes?.friendly_name || todo} has items</button>`);
+    opts.push(`<button class="chip starter" data-starter="unavailable"><ha-icon icon="mdi:alert-outline"></ha-icon> Alert when a device goes unavailable</button>`);
     return `<div class="empty">No alerts yet — try one of these, or tap “Add alert”:</div>
       <div class="chips" style="margin:4px 0 8px">${opts.join("")}</div>`;
   }
@@ -505,28 +505,28 @@ class WledTaskmapCard extends HTMLElement {
         ? "has pending items"
         : `is ${r.alert_states.split(",").join(" / ")}`;
       const ledsTxt = r.leds.length > 6 ? `${r.leds.length} LEDs` : `LED ${r.leds.join(", ")}`;
-      const fx = (r.effect === "blink" ? " · ⚡ blink" : r.effect === "pulse" ? " · 〰 pulse" : r.effect === "fill" ? " · ▮▯ fill bar" : "")
-        + (r.color2 === "RAINBOW" ? " · 🌈" : r.color2 ? " · gradient" : "")
-        + (r.for_minutes > 0 ? ` · ⏱ after ${r.for_minutes}m` : "")
-        + (r.cond_entity ? ` · 🚦 while ${r.cond_entity.split(".").pop()}=${r.cond_state || "on"}` : "")
-        + (r.notify ? " · 📱" : "")
+      const fx = (r.effect === "blink" ? " · blinks" : r.effect === "pulse" ? " · pulses" : r.effect === "fill" ? " · fill bar" : "")
+        + (r.color2 === "RAINBOW" ? " · rainbow" : r.color2 ? " · gradient" : "")
+        + (r.for_minutes > 0 ? ` · after ${r.for_minutes}m` : "")
+        + (r.cond_entity ? ` · while ${r.cond_entity.split(".").pop()} is ${r.cond_state || "on"}` : "")
+        + (r.notify ? " · notifies" : "")
         + (paused ? " · paused" : acked.has(i) ? " · silenced" : "");
       const ackBtn = !paused && !isStatic && (alerting.has(i) || acked.has(i))
-        ? `<button class="icon" data-ack="${i}" title="${acked.has(i) ? "Un-silence" : "Silence until the state changes"}">${acked.has(i) ? "🔕" : "🔔"}</button>`
+        ? `<button class="icon" data-ack="${i}" title="${acked.has(i) ? "Un-silence" : "Silence until the state changes"}">${acked.has(i) ? '<ha-icon icon="mdi:bell-off-outline"></ha-icon>' : '<ha-icon icon="mdi:bell-ring-outline"></ha-icon>'}</button>`
         : "";
       return `<div class="rule ${paused ? "paused" : ""}" draggable="true" data-idx="${i}">
         <div class="rmain">
-          <span class="drag" title="Drag to reorder (later rules win on shared LEDs)">⠿</span>
+          <span class="drag" title="Drag to reorder (later rules win on shared LEDs)"><ha-icon icon="mdi:drag-vertical"></ha-icon></span>
           <span class="dot" style="background:#${r.color}${alerting.has(i) && !paused ? ";box-shadow:0 0 6px #" + r.color : ""}"></span>
           <span class="rtext" ${isStatic ? "" : `data-info="${r.entity_id}"`} title="${isStatic ? "" : "Show entity details"}"><b>${name}</b> ${when} → ${ledsTxt}${fx}</span>
         </div>
         <div class="ractions">
           ${ackBtn}
-          <button class="icon" data-pause="${i}" title="${paused ? "Resume this alert" : "Pause this alert"}">${paused ? "▶" : "⏸"}</button>
-          <button class="icon" data-dup="${i}" title="Duplicate">⧉</button>
-          <button class="icon" data-test="${i}" title="Flash these LEDs on the strip">🔦</button>
-          <button class="icon" data-edit="${i}" title="Edit">✏️</button>
-          <button class="icon" data-del="${i}" title="Delete">🗑</button>
+          <button class="icon" data-pause="${i}" title="${paused ? "Resume this alert" : "Pause this alert"}">${paused ? '<ha-icon icon="mdi:play"></ha-icon>' : '<ha-icon icon="mdi:pause"></ha-icon>'}</button>
+          <button class="icon" data-dup="${i}" title="Duplicate"><ha-icon icon="mdi:content-copy"></ha-icon></button>
+          <button class="icon" data-test="${i}" title="Flash these LEDs on the strip"><ha-icon icon="mdi:flashlight"></ha-icon></button>
+          <button class="icon" data-edit="${i}" title="Edit"><ha-icon icon="mdi:pencil-outline"></ha-icon></button>
+          <button class="icon" data-del="${i}" title="Delete"><ha-icon icon="mdi:delete-outline"></ha-icon></button>
         </div>
       </div>`;
     }).join("") || (this._formOpen ? "" : this._starterHtml());
@@ -545,7 +545,7 @@ class WledTaskmapCard extends HTMLElement {
       <div class="form">
         <div class="step"><span class="num">1</span> Tap the LEDs on the strip above that should light up <span class="count">(${this._selected.size} selected)</span></div>
         <div class="step"><span class="num">2</span> When this entity…
-          <button class="chip ${this._form.static ? "on" : ""}" style="margin-left:8px" data-static title="No entity: these LEDs are simply always lit in the chosen color">💡 no entity — always lit</button></div>
+          <button class="chip ${this._form.static ? "on" : ""}" style="margin-left:8px" data-static title="No entity: these LEDs are simply always lit in the chosen color">no entity — always lit</button></div>
         ${this._form.static ? `<div class="hint">Static light: these LEDs are always lit in the chosen color. Pause ⏸ the rule to turn them off.</div>`
           : `<input class="entity" list="entities" placeholder="Start typing… e.g. sensor.printer" value="${this._form.entity}">
         <datalist id="entities">${entityOptions}</datalist>`}
@@ -558,7 +558,7 @@ class WledTaskmapCard extends HTMLElement {
           ? `<div class="hint">To-do list: lights up whenever it has pending items.</div>`
           : isNumeric
           ? `<div class="step"><span class="num">3</span> What should the LEDs show?</div>
-             <div class="chips"><button class="chip tobar">▮▯ Its level, as a ${this._form.colorStyle !== "single" ? this._form.colorStyle + " " : ""}bar (no conditions needed)</button></div>
+             <div class="chips"><button class="chip tobar">Show its level as a ${this._form.colorStyle !== "single" ? this._form.colorStyle + " " : ""}bar (no conditions needed)</button></div>
              <div class="hint" style="margin:8px 0 4px">…or alert only when its value is:</div>
              <div class="chips">
                <select class="cmpop">
@@ -572,7 +572,7 @@ class WledTaskmapCard extends HTMLElement {
                  `<button class="chip ${this._form.states.has(s) ? "on" : ""}" data-state="${s}">${s}</button>`).join("")}
              </div>
              <div class="chips" style="margin-top:6px">${[...this._form.states].filter((s)=>!["unavailable","unknown"].includes(s)).map((s) =>
-               `<button class="chip on" data-state="${s}">${s} ✕</button>`).join("")}</div>
+               `<button class="chip on" data-state="${s}">${s} ×</button>`).join("")}</div>
              <div class="hint">Current value: <b>${entState.state}</b>${entState.attributes.unit_of_measurement ? " " + entState.attributes.unit_of_measurement : ""}. E.g. battery: “below 20” to alert when low.</div>`
           : `<div class="step"><span class="num">3</span> …is in one of these states</div><div class="chips">${stateChips}
              <input class="newstate" placeholder="other…" size="8"></div>
@@ -587,89 +587,103 @@ class WledTaskmapCard extends HTMLElement {
           ${this._form.colorStyle === "gradient" ? `→ <input type="color" class="color2" value="${this._form.color2}">` : ""}
           <span class="chips" style="display:inline-flex;margin-left:10px">
             ${["solid","blink","pulse","fill"].map((e) =>
-              `<button class="chip ${this._form.effect === e ? "on" : ""}" data-effect="${e}">${e === "blink" ? "⚡ " : e === "pulse" ? "〰 " : ""}${e}</button>`).join("")}
+              `<button class="chip ${this._form.effect === e ? "on" : ""}" data-effect="${e}">${e}</button>`).join("")}
           </span></div>
-        <div class="step">🏷 Name (optional)
+        <div class="step"><ha-icon icon="mdi:tag-outline"></ha-icon> Name (optional)
           <input class="rulename" placeholder="e.g. Printer health" value="${this._form.name || ""}" style="width:200px;background:var(--card-background-color);color:var(--primary-text-color);border:1px solid var(--divider-color);border-radius:6px;padding:5px 6px"></div>
-        <div class="step">🚦 Only while (optional)
+        <div class="step"><ha-icon icon="mdi:filter-outline"></ha-icon> Only while (optional)
           <input class="condent" list="entities" placeholder="e.g. person.nishith or schedule.work" value="${this._form.condEntity || ""}" style="width:210px;background:var(--card-background-color);color:var(--primary-text-color);border:1px solid var(--divider-color);border-radius:6px;padding:5px 6px">
           is <input class="condst" placeholder="on" value="${this._form.condState || ""}" size="8" style="background:var(--card-background-color);color:var(--primary-text-color);border:1px solid var(--divider-color);border-radius:6px;padding:5px 6px"></div>
-        <div class="step">📱 Also notify (optional)
+        <div class="step"><ha-icon icon="mdi:cellphone"></ha-icon> Also notify (optional)
           <input class="notifysvc" list="notifysvcs" placeholder="e.g. mobile_app_phone" value="${this._form.notify || ""}" style="width:210px;background:var(--card-background-color);color:var(--primary-text-color);border:1px solid var(--divider-color);border-radius:6px;padding:5px 6px">
           <datalist id="notifysvcs">${Object.keys(this._hass.services?.notify || {}).map((s) => `<option value="${s}">`).join("")}</datalist></div>
-        <div class="step">⏱ Only alert after
+        <div class="step"><ha-icon icon="mdi:timer-outline"></ha-icon> Only alert after
           <input type="number" class="formin" min="0" step="0.5" value="${this._form.forMin}" style="width:60px"> minutes in that state
           <span class="hint" style="display:inline">(0 = immediately; avoids flickering from devices that briefly drop off)</span></div>
         <div class="actions">
           <button class="primary save">${this._editing !== null ? "Save changes" : "Add alert"}</button>
           <button class="cancel">Cancel</button>
         </div>
-      </div>` : `<button class="primary add">＋ Add alert</button>`;
+      </div>` : `<button class="primary add"><ha-icon icon="mdi:plus"></ha-icon> Add alert</button>`;
 
     this.shadowRoot.innerHTML = `
       <style>
-        ha-card{padding:16px}
-        h2{margin:0 0 4px;font-size:1.1em}
-        .sub{color:var(--secondary-text-color);font-size:.85em;margin-bottom:12px}
-        .strip{display:flex;flex-wrap:wrap;gap:4px;padding:10px;border-radius:10px;background:var(--secondary-background-color);user-select:none}
-        .led{width:18px;height:18px;border-radius:50%;background:var(--divider-color);border:2px solid transparent;cursor:pointer;box-sizing:border-box}
-        .led:hover{border-color:var(--primary-color)}
-        .strip.haslbl{padding-bottom:18px}
-        .strip.haslbl .led{position:relative;margin-bottom:12px}
-        .led[data-lbl]::after{content:attr(data-lbl);position:absolute;top:110%;left:50%;transform:translateX(-50%);font-size:10px;color:var(--secondary-text-color)}
-        .rule{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;padding:8px 4px;border-bottom:1px solid var(--divider-color)}
-        .rmain{display:flex;align-items:center;gap:8px;flex:1 1 240px;min-width:0}
-        .ractions{display:flex;align-items:center;gap:2px;margin-left:auto;flex:0 0 auto}
-        .dot{width:14px;height:14px;border-radius:50%;flex-shrink:0}
-        .rtext{flex:1;font-size:.92em}
-        .icon{background:none;border:none;cursor:pointer;font-size:1em}
-        .empty{color:var(--secondary-text-color);padding:12px 4px;font-size:.9em}
-        .form{margin-top:12px;padding:12px;border-radius:10px;background:var(--secondary-background-color)}
-        .step{margin:10px 0 6px;font-size:.92em}
-        .num{display:inline-flex;width:18px;height:18px;border-radius:50%;background:var(--primary-color);color:#fff;font-size:.75em;align-items:center;justify-content:center;margin-right:6px}
-        .count{color:var(--secondary-text-color)}
-        .entity{width:100%;box-sizing:border-box;padding:8px;border-radius:6px;border:1px solid var(--divider-color);background:var(--card-background-color);color:var(--primary-text-color)}
-        .chips{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
-        .chip{border:1px solid var(--divider-color);background:var(--card-background-color);color:var(--primary-text-color);border-radius:14px;padding:4px 10px;cursor:pointer;font-size:.85em}
-        .chip.on{background:var(--primary-color);color:#fff;border-color:var(--primary-color)}
-        .newstate{border:1px dashed var(--divider-color);background:none;border-radius:14px;padding:4px 10px;color:var(--primary-text-color);font-size:.85em}
-        .cmpop,.cmpval,.colorstyle{background:var(--card-background-color);color:var(--primary-text-color);border:1px solid var(--divider-color);border-radius:6px;padding:5px 6px;font-size:.9em}
-        .addcmp{border-style:dashed}
-        .color{margin-left:8px;width:48px;height:28px;border:none;background:none;cursor:pointer;vertical-align:middle}
-        .actions{margin-top:12px;display:flex;gap:8px}
-        button.primary{background:var(--primary-color);color:#fff;border:none;border-radius:8px;padding:8px 16px;cursor:pointer;font-size:.95em}
-        button.cancel{background:none;border:1px solid var(--divider-color);border-radius:8px;padding:8px 16px;cursor:pointer;color:var(--primary-text-color)}
-        button.add{margin-top:12px}
-        .hint{color:var(--secondary-text-color);font-size:.85em;margin:6px 0}
-        .flash{color:var(--error-color);font-size:.85em;margin-top:6px;opacity:0;transition:opacity .3s}
-        .rtext{cursor:pointer}
-        .rtext:hover{text-decoration:underline}
-        .quiet{margin-top:14px;padding-top:10px;border-top:1px solid var(--divider-color);font-size:.88em;color:var(--secondary-text-color);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-        .quiet select,.quiet input{background:var(--card-background-color);color:var(--primary-text-color);border:1px solid var(--divider-color);border-radius:6px;padding:4px 6px}
-        .banner{background:rgba(255,69,58,.15);color:var(--error-color,#ff453a);border:1px solid rgba(255,69,58,.4);border-radius:8px;padding:8px 12px;margin:6px 0;font-size:.9em;display:flex;align-items:center;gap:10px}
-        .banner.undo{background:rgba(10,132,255,.12);color:var(--primary-text-color);border-color:rgba(10,132,255,.4)}
-        .rule.paused{opacity:.45}
-        .drag{cursor:grab;color:var(--secondary-text-color);user-select:none}
+        ha-card{padding:20px 20px 16px;border-radius:16px}
+        h2{margin:0 0 2px;font-size:1.05em;font-weight:600;letter-spacing:-.01em}
+        ha-icon{--mdc-icon-size:17px}
+        .sub{color:var(--secondary-text-color);font-size:.8em;margin-bottom:14px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+        .strip{display:flex;flex-wrap:wrap;gap:5px;padding:12px;border-radius:12px;background:var(--secondary-background-color);user-select:none}
+        .led{width:16px;height:16px;border-radius:50%;background:color-mix(in srgb,var(--divider-color) 75%,transparent);border:2px solid transparent;cursor:pointer;box-sizing:border-box;transition:transform .12s ease}
+        .led:hover{transform:scale(1.2)}
+        .strip.haslbl{padding-bottom:20px}
+        .strip.haslbl .led{position:relative;margin-bottom:13px}
+        .led[data-lbl]::after{content:attr(data-lbl);position:absolute;top:120%;left:50%;transform:translateX(-50%);font-size:9px;font-weight:600;letter-spacing:.02em;color:var(--secondary-text-color)}
+        .rule{display:flex;flex-wrap:wrap;align-items:center;gap:2px 8px;padding:10px 2px;border-bottom:1px solid color-mix(in srgb,var(--divider-color) 55%,transparent)}
+        .rmain{display:flex;align-items:center;gap:10px;flex:1 1 240px;min-width:0}
+        .ractions{display:flex;align-items:center;gap:0;margin-left:auto;flex:0 0 auto}
+        .rule.paused{opacity:.4}
         .rule.dragover{border-top:2px solid var(--primary-color)}
-        .starter{border-style:dashed}
-        .resync{color:var(--secondary-text-color);font-size:.95em;margin-left:8px;border:1px solid var(--divider-color);border-radius:10px;padding:2px 8px}
-        .settingsbtn{display:block;margin-top:12px;background:none;border:none;color:var(--secondary-text-color);cursor:pointer;font-size:.88em;padding:4px 0}
+        .drag{cursor:grab;color:color-mix(in srgb,var(--secondary-text-color) 55%,transparent);user-select:none;display:inline-flex}
+        .dot{width:12px;height:12px;border-radius:50%;flex-shrink:0}
+        .rtext{flex:1;font-size:.88em;color:var(--secondary-text-color);min-width:0;cursor:pointer;line-height:1.45}
+        .rtext b{font-weight:600;color:var(--primary-text-color)}
+        .rtext:hover b{text-decoration:underline}
+        .icon{width:31px;height:31px;border-radius:9px;display:inline-flex;align-items:center;justify-content:center;background:none;border:none;color:var(--secondary-text-color);cursor:pointer;padding:0;transition:background .12s,color .12s}
+        .icon:hover{background:color-mix(in srgb,var(--primary-text-color) 8%,transparent);color:var(--primary-text-color)}
+        .icon ha-icon{--mdc-icon-size:17px}
+        .empty{color:var(--secondary-text-color);padding:14px 2px 6px;font-size:.88em}
+        .form{margin-top:14px;padding:16px;border-radius:14px;background:var(--secondary-background-color)}
+        .step{margin:12px 0 7px;font-size:.9em;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+        .step ha-icon{--mdc-icon-size:16px;color:var(--secondary-text-color)}
+        .num{display:inline-flex;width:19px;height:19px;border-radius:50%;background:color-mix(in srgb,var(--primary-color) 18%,transparent);color:var(--primary-color);font-size:.72em;font-weight:700;align-items:center;justify-content:center;flex-shrink:0}
+        .count{color:var(--secondary-text-color)}
+        .form input:not([type=color]):not([type=range]):not([type=checkbox]),.form select,.quiet input:not([type=color]):not([type=range]):not([type=checkbox]),.quiet select{background:var(--card-background-color);color:var(--primary-text-color);border:1px solid color-mix(in srgb,var(--divider-color) 80%,transparent);border-radius:8px;padding:6px 8px;font-size:.88em;outline:none}
+        .form input:focus,.quiet input:focus,.form select:focus{border-color:var(--primary-color)}
+        .entity{width:100%;box-sizing:border-box}
+        .chips{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+        .chip{border:none;background:color-mix(in srgb,var(--primary-text-color) 7%,transparent);color:var(--primary-text-color);border-radius:15px;padding:6px 12px;cursor:pointer;font-size:.82em;transition:background .12s}
+        .chip:hover{background:color-mix(in srgb,var(--primary-text-color) 12%,transparent)}
+        .chip.on{background:color-mix(in srgb,var(--primary-color) 20%,transparent);color:var(--primary-color);font-weight:600}
+        .newstate{background:none;border:1px dashed color-mix(in srgb,var(--divider-color) 90%,transparent);border-radius:15px;padding:6px 12px;color:var(--primary-text-color);font-size:.82em}
+        .cmpop,.cmpval,.colorstyle{background:var(--card-background-color);color:var(--primary-text-color);border:1px solid color-mix(in srgb,var(--divider-color) 80%,transparent);border-radius:8px;padding:6px 8px;font-size:.88em}
+        .addcmp{border:1px dashed color-mix(in srgb,var(--divider-color) 90%,transparent);background:none}
+        input[type=color]{width:34px;height:26px;border:none;background:none;cursor:pointer;padding:0;vertical-align:middle;border-radius:6px}
+        .color{margin-left:6px;width:44px;height:28px}
+        .actions{margin-top:16px;display:flex;gap:10px}
+        button.primary{background:var(--primary-color);color:#fff;border:none;border-radius:20px;padding:9px 18px;cursor:pointer;font-size:.9em;font-weight:600;display:inline-flex;align-items:center;gap:6px;transition:filter .12s,transform .06s}
+        button.primary:hover{filter:brightness(1.08)}
+        button.primary:active{transform:scale(.97)}
+        button.cancel{background:none;border:1px solid color-mix(in srgb,var(--divider-color) 90%,transparent);border-radius:20px;padding:9px 18px;cursor:pointer;color:var(--primary-text-color);font-size:.9em}
+        button.add{margin-top:14px}
+        .hint{color:var(--secondary-text-color);font-size:.8em;margin:6px 0;line-height:1.5}
+        .flash{color:var(--error-color);font-size:.82em;margin-top:6px;opacity:0;transition:opacity .3s}
+        .quiet{margin-top:12px;padding-top:12px;border-top:1px solid color-mix(in srgb,var(--divider-color) 55%,transparent);font-size:.85em;color:var(--secondary-text-color);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+        .quiet>ha-icon{--mdc-icon-size:16px}
+        .banner{background:color-mix(in srgb,var(--error-color,#ff453a) 12%,transparent);color:var(--error-color,#ff453a);border-radius:12px;padding:10px 14px;margin:8px 0;font-size:.85em;display:flex;align-items:center;gap:10px}
+        .banner ha-icon{--mdc-icon-size:17px;flex-shrink:0}
+        .banner.undo{background:color-mix(in srgb,var(--primary-color) 10%,transparent);color:var(--primary-text-color)}
+        .starter{border:1px dashed color-mix(in srgb,var(--divider-color) 90%,transparent);background:none;display:inline-flex;align-items:center;gap:6px}
+        .starter ha-icon{--mdc-icon-size:15px}
+        .resync{display:inline-flex;align-items:center;gap:4px;color:var(--secondary-text-color);font-size:1em;border:none;background:color-mix(in srgb,var(--primary-text-color) 6%,transparent);border-radius:12px;padding:3px 10px;cursor:pointer}
+        .resync ha-icon{--mdc-icon-size:13px}
+        .settingsbtn{display:inline-flex;align-items:center;gap:5px;margin-top:14px;background:none;border:none;color:var(--secondary-text-color);cursor:pointer;font-size:.85em;padding:4px 0;font-weight:500}
         .settingsbtn:hover{color:var(--primary-text-color)}
+        .settingsbtn ha-icon{--mdc-icon-size:15px}
       </style>
       <ha-card>
         <h2>LED Alerts</h2>
-        ${this._entry.offline ? `<div class="banner">⚠️ WLED unreachable${this._entry.offline_since ? " since " + new Date(this._entry.offline_since).toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"}) : ""} — check power/network</div>` : ""}
+        ${this._entry.offline ? `<div class="banner"><ha-icon icon="mdi:alert-circle-outline"></ha-icon> WLED unreachable${this._entry.offline_since ? " since " + new Date(this._entry.offline_since).toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"}) : ""} — check power/network</div>` : ""}
         ${this._undo ? `<div class="banner undo">Rule deleted <button class="chip undobtn">Undo</button></div>` : ""}
-        ${this._entry.paused ? `<div class="banner undo">⏸ All alerts are paused (switch) <button class="chip resumebtn">Resume</button></div>` : ""}
+        ${this._entry.paused ? `<div class="banner undo"><ha-icon icon="mdi:pause-circle-outline"></ha-icon> All alerts are paused (switch) <button class="chip resumebtn">Resume</button></div>` : ""}
         <div class="sub">${this._entry.host} · ${n} LEDs${this._formOpen ? " · tap or drag across the strip to choose LEDs" : ""}
-          ${!this._formOpen ? `<button class="icon resync" title="Repaint all LEDs on the strip now (e.g. after the strip was power-cycled)">↻ sync</button>` : ""}</div>
+          ${!this._formOpen ? `<button class="icon resync" title="Repaint all LEDs on the strip now (e.g. after the strip was power-cycled)"><ha-icon icon="mdi:sync"></ha-icon> Sync</button>` : ""}</div>
         <div class="strip ${this._week?.enabled ? "haslbl" : ""}">${leds}</div>
         <div class="rules">${rules}</div>
         ${form}
-        <button class="settingsbtn" title="Quiet hours, brightness, week board, pet and more">⚙ ${this._showSettings ? "Hide extras" : "Extras"}</button>
+        <button class="settingsbtn" title="Quiet hours, brightness, week board, pet and more"><ha-icon icon="mdi:tune"></ha-icon> ${this._showSettings ? "Hide extras" : "Extras"}</button>
         ${!this._showSettings ? "" : `
         <div class="quiet">
-          📅 Week board
+          <ha-icon icon="mdi:calendar-week"></ha-icon> Week board
           <label style="display:inline-flex;align-items:center;gap:4px"><input type="checkbox" class="weekon" ${this._week?.enabled ? "checked" : ""}> enabled</label>
           <span style="${this._week?.enabled ? "" : "display:none"}">
             start LED <input type="number" class="wstart" min="0" max="1024" value="${this._week?.start ?? 0}" style="width:54px">
@@ -684,7 +698,7 @@ class WledTaskmapCard extends HTMLElement {
         </div>
         ${this._week?.enabled ? `<div class="hint" style="margin:2px 0 6px">Today's block fills through the day; past days stay dim; the rest of the week is off. Alerts on the same LEDs take priority.</div>` : ""}
         <div class="quiet">
-          🌙 Quiet hours
+          <ha-icon icon="mdi:weather-night"></ha-icon> Quiet hours
           <select class="qmode">
             <option value="off" ${this._quiet.mode === "off" ? "selected" : ""}>Off</option>
             <option value="dim" ${this._quiet.mode === "dim" ? "selected" : ""}>Dim alerts</option>
@@ -697,34 +711,34 @@ class WledTaskmapCard extends HTMLElement {
             ${this._quiet.mode === "dim" ? `<span title="How dim alerts get at night">night level
               <input type="range" class="qdim" min="5" max="50" value="${this._quiet.dim ?? 25}" style="width:70px;vertical-align:middle"> ${this._quiet.dim ?? 25}%</span>` : ""}
           </span>
-          <span title="Overall brightness of all alert colors">☀️ intensity
+          <span title="Overall brightness of all alert colors"><ha-icon icon="mdi:brightness-6"></ha-icon> Intensity
             <input type="range" class="intensity" min="10" max="100" value="${this._intensity ?? 100}" style="width:80px;vertical-align:middle"> ${this._intensity ?? 100}%</span>
           <span style="margin-left:auto" title="WLED segment ID (leave 0 unless you use segments)">segment
             <input type="number" class="segment" min="0" max="31" value="${this._segment ?? 0}" style="width:48px"></span>
         </div>
         <div class="quiet">
-          🐾 LED pet
+          <ha-icon icon="mdi:paw"></ha-icon> LED pet
           <label style="display:inline-flex;align-items:center;gap:4px"><input type="checkbox" class="peton" ${this._pet?.enabled ? "checked" : ""}> enabled</label>
           <span class="petcfg" style="${this._pet?.enabled ? "" : "display:none"}">
             home: LED <input type="number" class="petstart" min="0" max="1024" value="${this._pet?.start ?? 0}" style="width:54px">
             size <input type="number" class="petsize" min="2" max="20" value="${this._pet?.size ?? 3}" style="width:44px">
-            ${this._pet?.mood ? `· mood: <b>${{happy:"happy 🌱",content:"content 😌",grumpy:"grumpy 😾",sad:"sulking 😞"}[this._pet.mood] || this._pet.mood}</b>` : ""}
+            ${this._pet?.mood ? `· mood: <b>${{happy:"happy",content:"content",grumpy:"grumpy",sad:"sulking"}[this._pet.mood] || this._pet.mood}</b>` : ""}
           </span>
         </div>
         ${this._pet?.enabled ? `<div class="quiet" style="border-top:none;margin-top:2px;padding-top:0">
           it watches:
-          ${(this._pet.sources || []).map((s) => `<button class="chip on" data-petsrc="${s}">${s} ✕</button>`).join("")}
+          ${(this._pet.sources || []).map((s) => `<button class="chip on" data-petsrc="${s}">${s} ×</button>`).join("")}
           <input class="petsrcadd" list="petentities" placeholder="add a to-do list or sensor…" style="min-width:180px">
           <datalist id="petentities">${Object.keys(this._hass.states).sort().map((e) => `<option value="${e}">`).join("")}</datalist>
         </div>` : ""}
         <div class="quiet">
-          💾 Backup
-          <button class="chip exportbtn" title="Download all rules and settings as a JSON file">⬇ Export</button>
-          <button class="chip importbtn" title="Restore rules and settings from a backup file (replaces current rules)">⬆ Import</button>
+          <ha-icon icon="mdi:content-save-outline"></ha-icon> Backup
+          <button class="chip exportbtn" title="Download all rules and settings as a JSON file">Export</button>
+          <button class="chip importbtn" title="Restore rules and settings from a backup file (replaces current rules)">Import</button>
           <input type="file" class="importfile" accept=".json,application/json" style="display:none">
         </div>
         ${this._entry.webhook_id ? `<div class="quiet" style="border-top:none;margin-top:2px;padding-top:0">
-          🪝 Webhook: <code style="font-size:.85em;user-select:all">POST /api/webhook/${this._entry.webhook_id}</code>
+          <ha-icon icon="mdi:webhook"></ha-icon> Webhook: <code style="font-size:.85em;user-select:all">POST /api/webhook/${this._entry.webhook_id}</code>
           <span class="hint" style="display:inline">body: {"led": 5, "color": "FF6600"} or {"led": 5, "action": "clear"}</span>
         </div>` : ""}`}
         <div class="flash"></div>

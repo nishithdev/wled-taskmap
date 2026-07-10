@@ -68,12 +68,13 @@ class WledTaskmapCard extends HTMLElement {
       const data = await this._hass.callWS({ type: "wled_taskmap/get_config" });
       const fresh = (data.entries || []).find((e) => e.entry_id === this._entry.entry_id);
       if (!fresh) return;
-      const key = JSON.stringify([fresh.active, fresh.alerting, fresh.acked, fresh.offline, fresh.pet?.mood]);
+      const key = JSON.stringify([fresh.active, fresh.alerting, fresh.acked, fresh.offline, fresh.pet?.mood, fresh.paused]);
       if (key !== this._liveKey) {
         this._liveKey = key;
         Object.assign(this._entry, {
           active: fresh.active, alerting: fresh.alerting, acked: fresh.acked,
           offline: fresh.offline, offline_since: fresh.offline_since,
+          paused: fresh.paused, webhook_id: fresh.webhook_id,
         });
         if (this._pet) this._pet.mood = fresh.pet?.mood;
         if (!this._formOpen) this._render();
@@ -148,6 +149,9 @@ class WledTaskmapCard extends HTMLElement {
         color2: r.color2 || "",
         enabled: r.enabled !== false,
         name: r.name || "",
+        cond_entity: r.cond_entity || "",
+        cond_state: r.cond_state || "",
+        notify: r.notify || "",
       })),
     });
   }
@@ -273,9 +277,12 @@ class WledTaskmapCard extends HTMLElement {
         name: r.name || "",
         enabled: r.enabled !== false,
         static: !r.entity_id,
+        condEntity: r.cond_entity || "",
+        condState: r.cond_state || "",
+        notify: r.notify || "",
       };
     } else {
-      this._form = { entity: "", states: new Set(["unavailable", "error"]), color: "#FF0000", effect: "solid", forMin: 0, fillMin: 0, fillMax: 100, colorStyle: "single", color2: "#00C853", name: "", enabled: true, static: false };
+      this._form = { entity: "", states: new Set(["unavailable", "error"]), color: "#FF0000", effect: "solid", forMin: 0, fillMin: 0, fillMax: 100, colorStyle: "single", color2: "#00C853", name: "", enabled: true, static: false, condEntity: "", condState: "", notify: "" };
     }
     this._render();
   }
@@ -302,6 +309,8 @@ class WledTaskmapCard extends HTMLElement {
     const isTodo = entity.startsWith("todo.");
     const isFill = this._form.effect === "fill";
     if (isStatic && isFill) return this._flash("Fill needs a sensor — pick another effect");
+    const cond = (this._form.condEntity || "").trim();
+    if (cond && !this._hass.states[cond]) return this._flash("The 'only while' entity doesn't exist");
     if (!isStatic && !isTodo && !isFill && !this._form.states.size) return this._flash("Pick at least one state");
     const rule = {
       entity_id: entity,
@@ -316,6 +325,9 @@ class WledTaskmapCard extends HTMLElement {
         : this._form.colorStyle === "gradient" ? this._form.color2.replace("#", "").toUpperCase() : "",
       name: (this._form.name || "").trim(),
       enabled: this._form.enabled !== false,
+      cond_entity: (this._form.condEntity || "").trim(),
+      cond_state: (this._form.condState || "").trim(),
+      notify: (this._form.notify || "").trim().replace(/^notify\./, ""),
     };
     if (this._editing !== null) this._rules[this._editing] = rule;
     else this._rules.push(rule);
@@ -496,6 +508,8 @@ class WledTaskmapCard extends HTMLElement {
       const fx = (r.effect === "blink" ? " · ⚡ blink" : r.effect === "pulse" ? " · 〰 pulse" : r.effect === "fill" ? " · ▮▯ fill bar" : "")
         + (r.color2 === "RAINBOW" ? " · 🌈" : r.color2 ? " · gradient" : "")
         + (r.for_minutes > 0 ? ` · ⏱ after ${r.for_minutes}m` : "")
+        + (r.cond_entity ? ` · 🚦 while ${r.cond_entity.split(".").pop()}=${r.cond_state || "on"}` : "")
+        + (r.notify ? " · 📱" : "")
         + (paused ? " · paused" : acked.has(i) ? " · silenced" : "");
       const ackBtn = !paused && !isStatic && (alerting.has(i) || acked.has(i))
         ? `<button class="icon" data-ack="${i}" title="${acked.has(i) ? "Un-silence" : "Silence until the state changes"}">${acked.has(i) ? "🔕" : "🔔"}</button>`
@@ -577,6 +591,12 @@ class WledTaskmapCard extends HTMLElement {
           </span></div>
         <div class="step">🏷 Name (optional)
           <input class="rulename" placeholder="e.g. Printer health" value="${this._form.name || ""}" style="width:200px;background:var(--card-background-color);color:var(--primary-text-color);border:1px solid var(--divider-color);border-radius:6px;padding:5px 6px"></div>
+        <div class="step">🚦 Only while (optional)
+          <input class="condent" list="entities" placeholder="e.g. person.nishith or schedule.work" value="${this._form.condEntity || ""}" style="width:210px;background:var(--card-background-color);color:var(--primary-text-color);border:1px solid var(--divider-color);border-radius:6px;padding:5px 6px">
+          is <input class="condst" placeholder="on" value="${this._form.condState || ""}" size="8" style="background:var(--card-background-color);color:var(--primary-text-color);border:1px solid var(--divider-color);border-radius:6px;padding:5px 6px"></div>
+        <div class="step">📱 Also notify (optional)
+          <input class="notifysvc" list="notifysvcs" placeholder="e.g. mobile_app_phone" value="${this._form.notify || ""}" style="width:210px;background:var(--card-background-color);color:var(--primary-text-color);border:1px solid var(--divider-color);border-radius:6px;padding:5px 6px">
+          <datalist id="notifysvcs">${Object.keys(this._hass.services?.notify || {}).map((s) => `<option value="${s}">`).join("")}</datalist></div>
         <div class="step">⏱ Only alert after
           <input type="number" class="formin" min="0" step="0.5" value="${this._form.forMin}" style="width:60px"> minutes in that state
           <span class="hint" style="display:inline">(0 = immediately; avoids flickering from devices that briefly drop off)</span></div>
@@ -640,6 +660,7 @@ class WledTaskmapCard extends HTMLElement {
         <h2>LED Alerts</h2>
         ${this._entry.offline ? `<div class="banner">⚠️ WLED unreachable${this._entry.offline_since ? " since " + new Date(this._entry.offline_since).toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"}) : ""} — check power/network</div>` : ""}
         ${this._undo ? `<div class="banner undo">Rule deleted <button class="chip undobtn">Undo</button></div>` : ""}
+        ${this._entry.paused ? `<div class="banner undo">⏸ All alerts are paused (switch) <button class="chip resumebtn">Resume</button></div>` : ""}
         <div class="sub">${this._entry.host} · ${n} LEDs${this._formOpen ? " · tap or drag across the strip to choose LEDs" : ""}
           ${!this._formOpen ? `<button class="icon resync" title="Repaint all LEDs on the strip now (e.g. after the strip was power-cycled)">↻ sync</button>` : ""}</div>
         <div class="strip ${this._week?.enabled ? "haslbl" : ""}">${leds}</div>
@@ -701,7 +722,11 @@ class WledTaskmapCard extends HTMLElement {
           <button class="chip exportbtn" title="Download all rules and settings as a JSON file">⬇ Export</button>
           <button class="chip importbtn" title="Restore rules and settings from a backup file (replaces current rules)">⬆ Import</button>
           <input type="file" class="importfile" accept=".json,application/json" style="display:none">
-        </div>`}
+        </div>
+        ${this._entry.webhook_id ? `<div class="quiet" style="border-top:none;margin-top:2px;padding-top:0">
+          🪝 Webhook: <code style="font-size:.85em;user-select:all">POST /api/webhook/${this._entry.webhook_id}</code>
+          <span class="hint" style="display:inline">body: {"led": 5, "color": "FF6600"} or {"led": 5, "action": "clear"}</span>
+        </div>` : ""}`}
         <div class="flash"></div>
       </ha-card>`;
 
@@ -778,6 +803,17 @@ class WledTaskmapCard extends HTMLElement {
     });
     const rname = root.querySelector(".rulename");
     rname?.addEventListener("input", () => { this._form.name = rname.value; });
+    const condent = root.querySelector(".condent");
+    condent?.addEventListener("input", () => { this._form.condEntity = condent.value; });
+    const condst = root.querySelector(".condst");
+    condst?.addEventListener("input", () => { this._form.condState = condst.value; });
+    const nsvc = root.querySelector(".notifysvc");
+    nsvc?.addEventListener("input", () => { this._form.notify = nsvc.value; });
+    root.querySelector(".resumebtn")?.addEventListener("click", async () => {
+      const res = await this._hass.callWS({ type: "wled_taskmap/set_paused", entry_id: this._entry.entry_id, paused: false });
+      this._entry.paused = res.paused;
+      this._render();
+    });
     root.querySelectorAll("[data-info]").forEach((el) =>
       el.addEventListener("click", () => this._moreInfo(el.dataset.info)));
     root.querySelectorAll("[data-effect]").forEach((b) =>

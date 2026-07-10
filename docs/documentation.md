@@ -186,6 +186,34 @@ action:
     data: {led: 5, color: "FF6600"}
 ```
 
+## Entities
+
+Each device provides:
+
+- **`switch.<name>_pause_alerts`** — flip on to silence all rule and manual alerts on the strip (the week board and pet keep running, and binary sensors stay truthful). Persisted across restarts; the card shows a banner with a Resume button while paused. Use it in automations: "pause LED alerts when the movie starts."
+- **`binary_sensor.<name>_alert_<rule>`** — one per alert rule (fill bars and static lights excluded): `on` while that rule fires, with `watched_entity`, `leds`, and `acknowledged` attributes. Gives every alert a history graph and lets other automations chain off it. Note: entities map to rules by list position, so reordering rules reassigns them.
+- **`button.<name>_resync`** — repaints the whole strip, same as the card's ↻ sync.
+- **`sensor.<name>_active_alerts`** — see below.
+
+## Per-rule conditions ("only while")
+
+Each rule can be gated by another entity: *only while `person.nishith` is `home`*, or *only while `schedule.work_hours` is `on`* (create a [Schedule helper](https://www.home-assistant.io/integrations/schedule/) for time windows). Set it in the rule form under 🚦; the state defaults to `on`. The rule instantly re-evaluates when the gating entity changes.
+
+## Notifications
+
+Give a rule a notify service (📱 field, e.g. `mobile_app_pixel`) and it sends a push notification when the alert fires — "Printer health lit LEDs 3-5 (error)". Clearing doesn't notify.
+
+## Webhook
+
+Each device registers a webhook (URL shown under ⚙ Extras → 🪝): external tools light LEDs with a plain POST — no HA entity needed:
+
+```bash
+curl -X POST https://your-ha/api/webhook/wled_taskmap_<entry_id> \
+  -H "Content-Type: application/json" -d '{"led": 5, "color": "FF6600"}'
+```
+
+Body fields: `led` (int), `color` (hex, optional), `action` — `set` (default), `clear`, or `clear_all`. These behave exactly like the `set_alert`/`clear_alert` services and persist across restarts. Anyone who can reach the URL can trigger it, so treat it like a secret.
+
 ## Sensor
 
 Each device adds `sensor.<name>_active_alerts`:

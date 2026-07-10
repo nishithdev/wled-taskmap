@@ -34,10 +34,13 @@ from .const import (
     CONF_ALERT_STATES,
     CONF_COLOR,
     CONF_COLOR2,
+    CONF_COND_ENTITY,
+    CONF_COND_STATE,
     CONF_EFFECT,
     CONF_ENABLED,
     CONF_ENTITY_ID,
     CONF_NAME_,
+    CONF_NOTIFY,
     CONF_FILL_MAX,
     CONF_FILL_MIN,
     CONF_FOR_MINUTES,
@@ -74,7 +77,7 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS = ["sensor"]
+PLATFORMS = ["binary_sensor", "button", "sensor", "switch"]
 
 SET_ALERT_SCHEMA = vol.Schema(
     {
@@ -122,6 +125,9 @@ def normalize_rule(rule: dict) -> dict:
         CONF_COLOR2: color2,
         CONF_ENABLED: bool(rule.get(CONF_ENABLED, True)),
         CONF_NAME_: str(rule.get(CONF_NAME_, "") or "")[:60],
+        CONF_COND_ENTITY: str(rule.get(CONF_COND_ENTITY, "") or ""),
+        CONF_COND_STATE: str(rule.get(CONF_COND_STATE, "") or ""),
+        CONF_NOTIFY: str(rule.get(CONF_NOTIFY, "") or ""),
         CONF_ENTITY_ID: rule[CONF_ENTITY_ID],
         CONF_LEDS: leds,
         CONF_COLOR: str(rule.get(CONF_COLOR, DEFAULT_COLOR)).lstrip("#").upper(),
@@ -253,6 +259,9 @@ class TaskMapManager:
         # Week board
         self.week: dict = entry.options.get(CONF_WEEK) or {}
         self._unsub_week = None
+        # Global pause (switch entity); persisted across restarts
+        self.paused = False
+        self.webhook_id: str = ""
         # rule idx -> cancel callback for a pending "for N minutes" timer
         self._pending: dict[int, callback] = {}
         # rule idx -> last alert state written to the logbook
@@ -339,6 +348,17 @@ class TaskMapManager:
         if idx in self._pending:
             self._pending.pop(idx)()
 
+    def _cond_ok(self, rule: dict) -> bool:
+        """Optional per-rule condition: active only while entity is in state."""
+        cond_entity = rule.get(CONF_COND_ENTITY, "")
+        if not cond_entity:
+            return True
+        state = self.hass.states.get(cond_entity)
+        if state is None:
+            return False
+        wanted = rule.get(CONF_COND_STATE, "") or "on"
+        return state.state.lower() == wanted.lower()
+
     def refresh_entity(self, entity_id: str) -> None:
         state = self.hass.states.get(entity_id)
         for idx, rule in enumerate(self.rules):
@@ -348,7 +368,7 @@ class TaskMapManager:
                 self._cancel_pending(idx)
                 self.rule_alerts[idx] = False
                 continue
-            raw = self._is_alert(rule, state)
+            raw = self._is_alert(rule, state) and self._cond_ok(rule)
             if raw and idx in self.acked:
                 if state is not None and state.state == self.acked[idx]:
                     # acknowledged: stay quiet until the state changes
@@ -389,7 +409,9 @@ class TaskMapManager:
     def refresh_all(self) -> None:
         for idx, rule in enumerate(self.rules):
             if not rule[CONF_ENTITY_ID]:  # static rule
-                self.rule_alerts[idx] = bool(rule.get(CONF_ENABLED, True))
+                self.rule_alerts[idx] = bool(
+                    rule.get(CONF_ENABLED, True)
+                ) and self._cond_ok(rule)
         for entity_id in {r[CONF_ENTITY_ID] for r in self.rules if r[CONF_ENTITY_ID]}:
             self.refresh_entity(entity_id)
 
@@ -515,9 +537,12 @@ class TaskMapManager:
 
     async def push(self) -> None:
         """Reconcile the strip with the current alert state."""
-        self._log_alert_changes()
+        self._on_alert_transitions()
         async with self._lock:
-            active = self.active_alerts
+            # Global pause silences rules and manual alerts on the strip;
+            # the week board and pet keep running, and binary sensors stay
+            # truthful about the underlying states.
+            active = {} if self.paused else self.active_alerts
             # week board sits underneath alerts: alerts on shared LEDs win
             for led, color in self._week_frame().items():
                 active.setdefault(led, (color, "solid"))
@@ -607,8 +632,14 @@ class TaskMapManager:
             {
                 "leds": sorted(self._painted),
                 "manual": {str(k): v for k, v in self.manual_alerts.items()},
+                "paused": self.paused,
             }
         )
+
+    async def set_paused(self, paused: bool) -> None:
+        self.paused = paused
+        await self._save_state()
+        await self.push()
 
     async def _update_painted(self, painted: set[int]) -> None:
         if painted != self._painted:
@@ -884,14 +915,16 @@ class TaskMapManager:
 
     # ---------- logbook ----------
 
-    def _log_alert_changes(self) -> None:
-        """Write a logbook entry whenever a rule starts or stops alerting."""
+    def _on_alert_transitions(self) -> None:
+        """Logbook entries + optional notifications on rule fire/clear."""
         try:
             from homeassistant.components.logbook import async_log_entry
         except ImportError:
-            return
-        if "logbook" not in self.hass.config.components:
-            return
+            async_log_entry = None
+        logbook_ok = (
+            async_log_entry is not None
+            and "logbook" in self.hass.config.components
+        )
         for idx, rule in enumerate(self.rules):
             if rule[CONF_EFFECT] == "fill" or not rule[CONF_ENTITY_ID]:
                 continue  # fill bars / static rules: logging would be noise
@@ -903,7 +936,7 @@ class TaskMapManager:
             self._last_logged[idx] = now
             entity_id = rule[CONF_ENTITY_ID]
             state = self.hass.states.get(entity_id)
-            name = (
+            name = rule.get(CONF_NAME_) or (
                 state.attributes.get("friendly_name") if state else None
             ) or entity_id
             leds = rule[CONF_LEDS]
@@ -916,9 +949,16 @@ class TaskMapManager:
                 )
             else:
                 message = f"cleared {leds_txt}"
-            async_log_entry(
-                self.hass, name, message, DOMAIN, entity_id
-            )
+            if logbook_ok:
+                async_log_entry(self.hass, name, message, DOMAIN, entity_id)
+            if now and rule.get(CONF_NOTIFY):
+                self.hass.async_create_task(
+                    self.hass.services.async_call(
+                        "notify",
+                        rule[CONF_NOTIFY].removeprefix("notify."),
+                        {"title": "LED alert", "message": f"{name} {message}"},
+                    )
+                )
 
     # ---------- repairs & renames ----------
 
@@ -992,6 +1032,7 @@ class TaskMapManager:
         self.manual_alerts = {
             int(k): str(v) for k, v in (data.get("manual") or {}).items()
         }
+        self.paused = bool(data.get("paused", False))
         # LEDs painted by a previous incarnation (deleted rules, restarts,
         # disabled pet) that nothing current covers: turn them off now.
         stale = self._painted - self.all_leds - self.pet_leds
@@ -1004,12 +1045,24 @@ class TaskMapManager:
         self._setup_rename_listener()
         entity_ids = sorted(
             {r[CONF_ENTITY_ID] for r in self.rules if r[CONF_ENTITY_ID]}
+            | {r[CONF_COND_ENTITY] for r in self.rules if r.get(CONF_COND_ENTITY)}
         )
         if entity_ids:
 
             @callback
             def _state_changed(event: Event) -> None:
-                self.refresh_entity(event.data["entity_id"])
+                changed = event.data["entity_id"]
+                self.refresh_entity(changed)
+                # a condition entity changing re-evaluates the rules it gates
+                for idx, rule in enumerate(self.rules):
+                    if rule.get(CONF_COND_ENTITY) != changed:
+                        continue
+                    if rule[CONF_ENTITY_ID]:
+                        self.refresh_entity(rule[CONF_ENTITY_ID])
+                    else:  # static rule gated by a condition
+                        self.rule_alerts[idx] = bool(
+                            rule.get(CONF_ENABLED, True)
+                        ) and self._cond_ok(rule)
                 self.hass.async_create_task(self.push())
 
             self._unsub_state = async_track_state_change_event(
@@ -1114,6 +1167,8 @@ def ws_get_config(hass, connection, msg) -> None:
                 "acked": sorted(manager.acked),
                 "offline": manager._offline,
                 "offline_since": manager.offline_since,
+                "paused": manager.paused,
+                "webhook_id": manager.webhook_id,
             }
         )
     connection.send_result(msg["id"], {"entries": entries})
@@ -1136,6 +1191,9 @@ def ws_get_config(hass, connection, msg) -> None:
                 vol.Optional(CONF_COLOR2, default=""): str,
                 vol.Optional(CONF_ENABLED, default=True): bool,
                 vol.Optional(CONF_NAME_, default=""): str,
+                vol.Optional(CONF_COND_ENTITY, default=""): str,
+                vol.Optional(CONF_COND_STATE, default=""): str,
+                vol.Optional(CONF_NOTIFY, default=""): str,
             }
         ],
     }
@@ -1182,6 +1240,24 @@ async def ws_save_settings(hass, connection, msg) -> None:
             options[key] = msg[key]
     hass.config_entries.async_update_entry(entry, options=options)
     connection.send_result(msg["id"], {"ok": True})
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): f"{DOMAIN}/set_paused",
+        vol.Required("entry_id"): str,
+        vol.Required("paused"): bool,
+    }
+)
+@websocket_api.async_response
+async def ws_set_paused(hass, connection, msg) -> None:
+    manager = hass.data.get(DOMAIN, {}).get(msg["entry_id"])
+    if manager is None:
+        connection.send_error(msg["id"], "not_found", "Device not found")
+        return
+    await manager.set_paused(msg["paused"])
+    async_dispatcher_send(hass, f"{SIGNAL_UPDATE}_{msg['entry_id']}")
+    connection.send_result(msg["id"], {"paused": manager.paused})
 
 
 @websocket_api.websocket_command(
@@ -1345,7 +1421,38 @@ async def _async_setup_shared(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_ack_rule)
     websocket_api.async_register_command(hass, ws_resync)
     websocket_api.async_register_command(hass, ws_save_week)
+    websocket_api.async_register_command(hass, ws_set_paused)
     websocket_api.async_register_command(hass, ws_test_rule)
+
+
+async def _handle_webhook(hass, webhook_id: str, request) -> None:
+    """POST {led, color?, action: set|clear|clear_all} lights LEDs externally."""
+    manager = None
+    for mgr in hass.data.get(DOMAIN, {}).values():
+        if mgr.webhook_id == webhook_id:
+            manager = mgr
+            break
+    if manager is None:
+        return
+    try:
+        data = await request.json()
+    except ValueError:
+        return
+    action = str(data.get("action", "set"))
+    if action == "clear_all":
+        manager.manual_alerts.clear()
+    else:
+        try:
+            led = int(data["led"])
+        except (KeyError, ValueError, TypeError):
+            return
+        if action == "clear":
+            manager.manual_alerts.pop(led, None)
+        else:
+            color = str(data.get("color", DEFAULT_COLOR)).lstrip("#").upper()
+            manager.manual_alerts[led] = color
+    await manager._save_state()
+    await manager.push()
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -1354,6 +1461,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     manager = TaskMapManager(hass, entry)
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = manager
     await manager.async_start()
+
+    from homeassistant.components import webhook
+
+    manager.webhook_id = f"{DOMAIN}_{entry.entry_id}"
+    try:
+        webhook.async_register(
+            hass,
+            DOMAIN,
+            f"WLED Task Map ({manager.host})",
+            manager.webhook_id,
+            _handle_webhook,
+        )
+    except ValueError:
+        pass  # already registered (reload)
+    entry.async_on_unload(
+        lambda: webhook.async_unregister(hass, manager.webhook_id)
+    )
 
     async def handle_set_alert(call: ServiceCall) -> None:
         manager.manual_alerts[int(call.data[ATTR_LED])] = call.data[

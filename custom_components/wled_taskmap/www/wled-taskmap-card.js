@@ -29,6 +29,15 @@ const DOMAIN_STATES = {
   printer: ["idle", "printing", "error"],
 };
 
+// Escapes user-controlled text (entity friendly_name, rule names) before it's
+// interpolated into innerHTML template strings, so a crafted name can't inject
+// markup/script into the dashboard.
+function esc(value) {
+  return String(value).replace(/[&<>"']/g, (c) => (
+    { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
+  ));
+}
+
 class WledTaskmapCard extends HTMLElement {
   constructor() {
     super();
@@ -390,8 +399,8 @@ class WledTaskmapCard extends HTMLElement {
       || ids.find((e) => states[e].attributes?.device_class === "battery");
     const todo = ids.find((e) => e.startsWith("todo."));
     const opts = [];
-    if (battery) opts.push(`<button class="chip starter" data-starter="battery" data-ent="${battery}"><ha-icon icon="mdi:battery-70"></ha-icon> Battery gauge for ${states[battery].attributes?.friendly_name || battery}</button>`);
-    if (todo) opts.push(`<button class="chip starter" data-starter="todo" data-ent="${todo}"><ha-icon icon="mdi:format-list-checks"></ha-icon> Light up when ${states[todo].attributes?.friendly_name || todo} has items</button>`);
+    if (battery) opts.push(`<button class="chip starter" data-starter="battery" data-ent="${esc(battery)}"><ha-icon icon="mdi:battery-70"></ha-icon> Battery gauge for ${esc(states[battery].attributes?.friendly_name || battery)}</button>`);
+    if (todo) opts.push(`<button class="chip starter" data-starter="todo" data-ent="${esc(todo)}"><ha-icon icon="mdi:format-list-checks"></ha-icon> Light up when ${esc(states[todo].attributes?.friendly_name || todo)} has items</button>`);
     opts.push(`<button class="chip starter" data-starter="unavailable"><ha-icon icon="mdi:alert-outline"></ha-icon> Alert when a device goes unavailable</button>`);
     return `<div class="empty">No alerts yet — try one of these, or tap “Add alert”:</div>
       <div class="chips" style="margin:4px 0 8px">${opts.join("")}</div>`;
@@ -503,7 +512,7 @@ class WledTaskmapCard extends HTMLElement {
         ? `fills ${r.fill_min ?? 0}–${r.fill_max ?? 100}`
         : r.entity_id.startsWith("todo.")
         ? "has pending items"
-        : `is ${r.alert_states.split(",").join(" / ")}`;
+        : `is ${esc(r.alert_states.split(",").join(" / "))}`;
       const ledsTxt = r.leds.length > 6 ? `${r.leds.length} LEDs` : `LED ${r.leds.join(", ")}`;
       const fx = (r.effect === "blink" ? " · blinks" : r.effect === "pulse" ? " · pulses" : r.effect === "fill" ? " · fill bar" : "")
         + (r.color2 === "RAINBOW" ? " · rainbow" : r.color2 ? " · gradient" : "")
@@ -518,7 +527,7 @@ class WledTaskmapCard extends HTMLElement {
         <div class="rmain">
           <span class="drag" title="Drag to reorder (later rules win on shared LEDs)"><ha-icon icon="mdi:drag-vertical"></ha-icon></span>
           <span class="dot" style="background:#${r.color}${alerting.has(i) && !paused ? ";box-shadow:0 0 6px #" + r.color : ""}"></span>
-          <span class="rtext" ${isStatic ? "" : `data-info="${r.entity_id}"`} title="${isStatic ? "" : "Show entity details"}"><b>${name}</b> ${when} → ${ledsTxt}${fx}</span>
+          <span class="rtext" ${isStatic ? "" : `data-info="${esc(r.entity_id)}"`} title="${isStatic ? "" : "Show entity details"}"><b>${esc(name)}</b> ${when} → ${ledsTxt}${fx}</span>
         </div>
         <div class="ractions">
           ${ackBtn}
@@ -590,7 +599,7 @@ class WledTaskmapCard extends HTMLElement {
               `<button class="chip ${this._form.effect === e ? "on" : ""}" data-effect="${e}">${e}</button>`).join("")}
           </span></div>
         <div class="step"><ha-icon icon="mdi:tag-outline"></ha-icon> Name (optional)
-          <input class="rulename" placeholder="e.g. Printer health" value="${this._form.name || ""}" style="width:200px;background:var(--card-background-color);color:var(--primary-text-color);border:1px solid var(--divider-color);border-radius:6px;padding:5px 6px"></div>
+          <input class="rulename" placeholder="e.g. Printer health" value="${esc(this._form.name || "")}" style="width:200px;background:var(--card-background-color);color:var(--primary-text-color);border:1px solid var(--divider-color);border-radius:6px;padding:5px 6px"></div>
         <div class="step"><ha-icon icon="mdi:filter-outline"></ha-icon> Only while (optional)
           <input class="condent" list="entities" placeholder="e.g. person.nishith or schedule.work" value="${this._form.condEntity || ""}" style="width:210px;background:var(--card-background-color);color:var(--primary-text-color);border:1px solid var(--divider-color);border-radius:6px;padding:5px 6px">
           is <input class="condst" placeholder="on" value="${this._form.condState || ""}" size="8" style="background:var(--card-background-color);color:var(--primary-text-color);border:1px solid var(--divider-color);border-radius:6px;padding:5px 6px"></div>
@@ -722,12 +731,12 @@ class WledTaskmapCard extends HTMLElement {
           <span class="petcfg" style="${this._pet?.enabled ? "" : "display:none"}">
             home: LED <input type="number" class="petstart" min="0" max="1024" value="${this._pet?.start ?? 0}" style="width:54px">
             size <input type="number" class="petsize" min="2" max="20" value="${this._pet?.size ?? 3}" style="width:44px">
-            ${this._pet?.mood ? `· mood: <b>${{happy:"happy",content:"content",grumpy:"grumpy",sad:"sulking"}[this._pet.mood] || this._pet.mood}</b>` : ""}
+            ${this._pet?.mood ? `· mood: <b>${esc({happy:"happy",content:"content",grumpy:"grumpy",sad:"sulking"}[this._pet.mood] || this._pet.mood)}</b>` : ""}
           </span>
         </div>
         ${this._pet?.enabled ? `<div class="quiet" style="border-top:none;margin-top:2px;padding-top:0">
           it watches:
-          ${(this._pet.sources || []).map((s) => `<button class="chip on" data-petsrc="${s}">${s} ×</button>`).join("")}
+          ${(this._pet.sources || []).map((s) => `<button class="chip on" data-petsrc="${esc(s)}">${esc(s)} ×</button>`).join("")}
           <input class="petsrcadd" list="petentities" placeholder="add a to-do list or sensor…" style="min-width:180px">
           <datalist id="petentities">${Object.keys(this._hass.states).sort().map((e) => `<option value="${e}">`).join("")}</datalist>
         </div>` : ""}

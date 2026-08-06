@@ -1413,6 +1413,7 @@ async def _async_setup_shared(hass: HomeAssistant) -> None:
     except Exception:  # noqa: BLE001
         version = "0"
     add_extra_js_url(hass, f"{CARD_URL}?v={version}")
+    await _async_check_card_cache(hass, version)
 
     websocket_api.async_register_command(hass, ws_get_config)
     websocket_api.async_register_command(hass, ws_save_rules)
@@ -1423,6 +1424,29 @@ async def _async_setup_shared(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_save_week)
     websocket_api.async_register_command(hass, ws_set_paused)
     websocket_api.async_register_command(hass, ws_test_rule)
+
+
+async def _async_check_card_cache(hass: HomeAssistant, version: str) -> None:
+    """Warn companion-app users once when the card asset changed underneath a cached webview.
+
+    The companion app's webview caches the frontend shell more aggressively than a
+    browser tab, so `add_extra_js_url` alone doesn't reach devices that already
+    rendered a dashboard before this update. A Repairs issue is delivered over the
+    API/websocket (not the cached shell), so it reaches those devices even though
+    the card itself still won't load until the user clears the app's cache.
+    """
+    store = Store(hass, 1, f"{DOMAIN}_card_version")
+    last_version = (await store.async_load()) or {}
+    if last_version.get("version") and last_version["version"] != version:
+        ir.async_create_issue(
+            hass,
+            DOMAIN,
+            "card_cache_stale",
+            is_fixable=False,
+            severity=ir.IssueSeverity.WARNING,
+            translation_key="card_cache_stale",
+        )
+    await store.async_save({"version": version})
 
 
 async def _handle_webhook(hass, webhook_id: str, request) -> None:

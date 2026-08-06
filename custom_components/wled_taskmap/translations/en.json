@@ -26,6 +26,10 @@
     "missing_entity": {
       "title": "WLED Task Map rule watches a missing entity",
       "description": "An LED alert on {host} watches `{entity_id}`, but that entity no longer exists. Its LED will never light. Open the WLED Task Map card and edit or delete that alert."
+    },
+    "card_cache_stale": {
+      "title": "WLED Task Map card was updated",
+      "description": "The card was updated, but the Home Assistant companion app may still show \"Custom element doesn't exist: wled-taskmap-card\" until its cache is cleared.\n\nOn Android: Settings app → Apps → Home Assistant → Storage → **Clear cache** (not Clear data), then reopen the app.\n\nOn iOS: force-quit the app, then reopen it. If it still fails, remove and reinstall the app."
     }
   }
 }

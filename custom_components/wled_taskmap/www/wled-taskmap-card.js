@@ -556,7 +556,7 @@ class WledTaskmapCard extends HTMLElement {
         <div class="step"><span class="num">2</span> When this entity…
           <button class="chip ${this._form.static ? "on" : ""}" style="margin-left:8px" data-static title="No entity: these LEDs are simply always lit in the chosen color">no entity — always lit</button></div>
         ${this._form.static ? `<div class="hint">Static light: these LEDs are always lit in the chosen color. Pause ⏸ the rule to turn them off.</div>`
-          : `<input class="entity" list="entities" placeholder="Start typing… e.g. sensor.printer" value="${this._form.entity}">
+          : `<input class="entity" list="entities" placeholder="Start typing… e.g. sensor.printer" value="${esc(this._form.entity)}">
         <datalist id="entities">${entityOptions}</datalist>`}
         ${this._form.static ? "" : isFill
           ? `<div class="step"><span class="num">3</span> Fill the LEDs as its value goes from
@@ -601,10 +601,10 @@ class WledTaskmapCard extends HTMLElement {
         <div class="step"><ha-icon icon="mdi:tag-outline"></ha-icon> Name (optional)
           <input class="rulename" placeholder="e.g. Printer health" value="${esc(this._form.name || "")}" style="width:200px;background:var(--card-background-color);color:var(--primary-text-color);border:1px solid var(--divider-color);border-radius:6px;padding:5px 6px"></div>
         <div class="step"><ha-icon icon="mdi:filter-outline"></ha-icon> Only while (optional)
-          <input class="condent" list="entities" placeholder="e.g. person.nishith or schedule.work" value="${this._form.condEntity || ""}" style="width:210px;background:var(--card-background-color);color:var(--primary-text-color);border:1px solid var(--divider-color);border-radius:6px;padding:5px 6px">
-          is <input class="condst" placeholder="on" value="${this._form.condState || ""}" size="8" style="background:var(--card-background-color);color:var(--primary-text-color);border:1px solid var(--divider-color);border-radius:6px;padding:5px 6px"></div>
+          <input class="condent" list="entities" placeholder="e.g. person.nishith or schedule.work" value="${esc(this._form.condEntity || "")}" style="width:210px;background:var(--card-background-color);color:var(--primary-text-color);border:1px solid var(--divider-color);border-radius:6px;padding:5px 6px">
+          is <input class="condst" placeholder="on" value="${esc(this._form.condState || "")}" size="8" style="background:var(--card-background-color);color:var(--primary-text-color);border:1px solid var(--divider-color);border-radius:6px;padding:5px 6px"></div>
         <div class="step"><ha-icon icon="mdi:cellphone"></ha-icon> Also notify (optional)
-          <input class="notifysvc" list="notifysvcs" placeholder="e.g. mobile_app_phone" value="${this._form.notify || ""}" style="width:210px;background:var(--card-background-color);color:var(--primary-text-color);border:1px solid var(--divider-color);border-radius:6px;padding:5px 6px">
+          <input class="notifysvc" list="notifysvcs" placeholder="e.g. mobile_app_phone" value="${esc(this._form.notify || "")}" style="width:210px;background:var(--card-background-color);color:var(--primary-text-color);border:1px solid var(--divider-color);border-radius:6px;padding:5px 6px">
           <datalist id="notifysvcs">${Object.keys(this._hass.services?.notify || {}).map((s) => `<option value="${s}">`).join("")}</datalist></div>
         <div class="step"><ha-icon icon="mdi:timer-outline"></ha-icon> Only alert after
           <input type="number" class="formin" min="0" step="0.5" value="${this._form.forMin}" style="width:60px"> minutes in that state

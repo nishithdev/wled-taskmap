@@ -1,4 +1,4 @@
-<p align="center"><img src="assets/logo.png" width="360" alt="WLED Task Map"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/nishithdev/wled-taskmap/main/assets/logo.png" width="360" alt="WLED Task Map"></p>
 
 <h1 align="center">WLED Task Map</h1>
 
@@ -14,7 +14,7 @@ Examples of what it can do:
 
 You set all of this up by **tapping LEDs and picking colors in a visual card** — no YAML, no code.
 
-<p align="center"><img src="assets/demo.gif" width="560" alt="30-second demo: tap LEDs, pick an entity and states, choose a color — done"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/nishithdev/wled-taskmap/main/assets/demo.gif" width="560" alt="30-second demo: tap LEDs, pick an entity and states, choose a color — done"></p>
 
 ## Feature highlights
 
@@ -110,7 +110,7 @@ Tap ✏️ to change anything, 🗑 to remove.
 
 A single 30-LED shelf strip can act as a whole-house dashboard by giving each topic its own block of LEDs:
 
-<p align="center"><img src="assets/zones-example.svg?v=2" width="640" alt="One strip split into network, phone battery, and printer zones"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/nishithdev/wled-taskmap/main/assets/zones-example.svg?v=2" width="640" alt="One strip split into network, phone battery, and printer zones"></p>
 
 | Zone | LEDs | Alert | Color / effect |
 |---|---|---|---|
